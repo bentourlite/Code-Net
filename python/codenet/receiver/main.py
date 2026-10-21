@@ -31,6 +31,12 @@ def parse_args(argv=None):
     p.add_argument("--level", type=float, default=0.5, help="LTC output level, 0 to 1")
     p.add_argument("--advance-ms", type=float, default=0.0, help="start each frame this much earlier (device delay)")
     p.add_argument("--readback-device", help="audio input that hears the LTC output, for confirmation")
+    p.add_argument("--loss-timeout-frames", type=int, default=2,
+                   help="frames without packets before a host counts as lost (default 2)")
+    p.add_argument("--max-predict-frames", type=int, default=2,
+                   help="frames generated past the newest packet before the output stops (default 2)")
+    p.add_argument("--wifi", action="store_true",
+                   help="testing over Wi-Fi: ride through packet gaps of up to 6 frames (240 ms at 25 fps)")
     p.add_argument("--no-auto-return", action="store_true", help="only return to main when asked")
     p.add_argument("--group", default=MULTICAST_GROUP, help="multicast group, or 'none' for unicast")
     p.add_argument("--port", type=int, default=FRAME_PORT)
@@ -42,7 +48,16 @@ def main(argv=None) -> None:
     args = parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    if args.wifi:
+        args.loss_timeout_frames = max(args.loss_timeout_frames, 6)
+        args.max_predict_frames = max(args.max_predict_frames, 6)
+        log.warning("Wi-Fi mode: output continues up to %d frames after packets stop; use wired for shows",
+                    args.max_predict_frames)
+    if args.loss_timeout_frames > args.max_predict_frames:
+        log.warning("loss timeout is longer than the prediction window; failover will leave a gap")
     config = ReceiverConfig(main=source_id(args.main), backup=source_id(args.backup) if args.backup else None,
+                            loss_timeout_frames=args.loss_timeout_frames,
+                            max_predict_frames=args.max_predict_frames,
                             auto_return=not args.no_auto_return,
                             output_advance_ns=int(args.advance_ms * 1_000_000))
     receiver = Receiver(config)

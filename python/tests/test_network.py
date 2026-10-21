@@ -56,12 +56,15 @@ def test_live_pipeline_over_udp(sync_port):
         t += block * NS_PER_S // SR
         while time.monotonic_ns() < t:
             time.sleep(0.0005)
+    # Read the state while the sender is still running; once it stops the receiver
+    # rightly drops main within two frames.
+    active = rx.active
     sender.stop()
     sending.join(timeout=1)
     service.stop()
     sync.stop()
 
-    assert rx.active is not None and rx.active.role is Role.MAIN
+    assert active is not None and active.role is Role.MAIN
     decoded = LtcDecoder(SR).feed(np.concatenate(out))
     tcs = [f.timecode for f in decoded]
     assert len(tcs) >= 20, f"only {len(tcs)} frames decoded"

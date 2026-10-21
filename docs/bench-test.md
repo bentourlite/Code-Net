@@ -83,6 +83,21 @@ What to expect:
 If nothing arrives, the network may be blocking multicast. Send directly to the Pi
 instead: add `--to <pi ip address>` on the Mac and `--group none` on the Pi.
 
+### Testing over Wi-Fi
+
+Wi-Fi power saving holds packets back and releases them in bursts, with gaps of
+100 ms or more. The receiver then drops the host and the LTC cuts in and out. For
+desk testing over Wi-Fi:
+
+```sh
+sudo iw wlan0 set power_save off         # on the Pi, after every reboot
+.venv/bin/codenet-receiver --name pi-1 --main mac-a --output soundcard --device "USB" --wifi
+```
+
+`--wifi` lets the receiver ride through gaps of up to 6 frames (240 ms at 25 fps).
+The cost is that the output carries on for up to 6 frames after the host really
+stops. Use a wired network and the default settings for shows.
+
 ## 5. Failover test
 
 Run a second sender on another computer at the same position:

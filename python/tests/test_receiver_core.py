@@ -135,3 +135,11 @@ def test_service_explains_why_output_is_idle():
     assert "clock is not synced" in svc.describe_idle(FRAME)
     svc._handle(frame(source_id("mac-z"), 0).encode(), "10.0.0.3")
     assert source_id("mac-z") in svc._ignored
+
+
+def test_wider_windows_ride_through_wifi_sized_gaps():
+    rx = make(loss_timeout_frames=6, max_predict_frames=6)
+    feed(rx, 0)
+    t = 4 * FRAME  # ~130 ms with no packets
+    rx.update(t)
+    assert rx.active is not None and rx.frame_at(t) is not None
