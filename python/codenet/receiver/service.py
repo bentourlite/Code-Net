@@ -24,6 +24,8 @@ class ReceiverService:
         self.clock = clock
         self.lock = threading.Lock()
         self.host_addresses: dict[bytes, str] = {}
+        self.packets_received = 0
+        self._ignored: set[bytes] = set()
         self._seq = 0
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -31,6 +33,24 @@ class ReceiverService:
     def frame_at(self, local_ns: int):
         with self.lock:
             return self.receiver.frame_at(local_ns)
+
+    def describe_idle(self, now_ns: int) -> str:
+        """Why nothing is being output, for the status line."""
+        with self.lock:
+            if self.packets_received == 0:
+                return "no Code Net packets received yet; check the sender, its --to address and the network"
+            reasons = []
+            for state in self.receiver.sources.values():
+                name = source_name(state.source)
+                if state.last_packet is None:
+                    reasons.append(f"nothing from {name}")
+                elif not state.clock.ready:
+                    reasons.append(f"{name} heard but its clock is not synced; check the Mac firewall")
+                elif not state.last_packet.playing:
+                    reasons.append(f"{name} is stopped")
+                elif not self.receiver.is_valid(state, now_ns):
+                    reasons.append(f"{name} has gone quiet")
+            return "; ".join(reasons) or "waiting"
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self.run, name="codenet-net", daemon=True)
@@ -70,7 +90,12 @@ class ReceiverService:
             log.debug("dropped packet from %s: %s", host, exc)
             return
         with self.lock:
+            self.packets_received += 1
             if isinstance(msg, FramePacket):
+                if msg.source not in self.receiver.sources and msg.source not in self._ignored:
+                    log.warning("ignoring frames from host %s at %s: not this receiver's main or backup",
+                                source_name(msg.source), host)
+                    self._ignored.add(msg.source)
                 if msg.source in self.receiver.sources and self.host_addresses.get(msg.source) != host:
                     log.info("host %s is at %s", source_name(msg.source), host)
                     self.host_addresses[msg.source] = host

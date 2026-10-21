@@ -80,7 +80,7 @@ def main(argv=None) -> None:
         while not stop.wait(1.0):
             now = time.monotonic_ns()
             frame = service.frame_at(now)
-            line = f"output {frame.timecode if frame else 'stopped'}"
+            line = f"output {frame.timecode}" if frame else f"output stopped ({service.describe_idle(now)})"
             if readback is not None:
                 st = readback.status(now, outputting=frame is not None)
                 offset = f" {st.offset_ns / 1e6:+.2f} ms" if st.offset_ns is not None else ""

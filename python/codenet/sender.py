@@ -97,6 +97,7 @@ class Sender:
         self.clock = clock
         self.sock = sender_socket()
         self.sequence = 0
+        self._send_error: str | None = None
         self._stop = threading.Event()
 
     def stop(self) -> None:
@@ -105,7 +106,19 @@ class Sender:
     def _send(self, tc: Timecode, user_bits: int, start_ns: int, flags: FrameFlags) -> None:
         self.sequence += 1
         pkt = FramePacket(self.source, 0, self.sequence, tc, user_bits, start_ns, flags)
-        self.sock.sendto(pkt.encode(), self.destination)
+        try:
+            self.sock.sendto(pkt.encode(), self.destination)
+        except OSError as exc:
+            # Keep running: the network may come back. Report each new error once.
+            if str(exc) != self._send_error:
+                log.error("cannot send to %s:%d: %s%s", *self.destination, exc,
+                          " (on macOS, allow Terminal under Privacy & Security > Local Network)"
+                          if exc.errno == 65 else "")
+                self._send_error = str(exc)
+            return
+        if self._send_error is not None:
+            log.info("sending to %s:%d again", *self.destination)
+            self._send_error = None
 
     def run(self) -> None:
         decoder = LtcDecoder(self.sample_rate)

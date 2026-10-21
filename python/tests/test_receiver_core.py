@@ -121,3 +121,17 @@ def test_failover_is_gapless_when_ticked():
         t += NS_PER_S // 1000
     assert None not in outputs
     assert rx.active.role is Role.BACKUP
+
+
+def test_service_explains_why_output_is_idle():
+    import socket
+
+    from codenet.receiver.service import ReceiverService
+
+    rx = Receiver(ReceiverConfig(main=MAIN))
+    svc = ReceiverService(rx, socket.socket(socket.AF_INET, socket.SOCK_DGRAM), source_id("pi"))
+    assert "no Code Net packets" in svc.describe_idle(0)
+    svc._handle(frame(MAIN, 0).encode(), "10.0.0.2")
+    assert "clock is not synced" in svc.describe_idle(FRAME)
+    svc._handle(frame(source_id("mac-z"), 0).encode(), "10.0.0.3")
+    assert source_id("mac-z") in svc._ignored
