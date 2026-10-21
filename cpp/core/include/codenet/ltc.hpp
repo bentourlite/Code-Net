@@ -28,17 +28,22 @@ struct DecodedFrame {
 
 // Feed blocks of samples; each complete frame is reported through the callback with
 // the absolute sample position where it started. No allocation after construction.
+// The switching threshold follows the signal level (a fraction of the recent peak),
+// so LTC is read from full scale down to about -50 dBFS.
 class LtcDecoder {
 public:
-    explicit LtcDecoder(double sampleRate, float hysteresis = 0.05f);
+    explicit LtcDecoder(double sampleRate, float minThreshold = 0.002f);
 
     template <typename Callback>
     void process(const float* samples, int count, Callback&& onFrame) {
         for (int i = 0; i < count; ++i) {
             const float x = samples[i];
+            const float level = x < 0 ? -x : x;
+            envelope_ = level > envelope_ ? level : envelope_ * decay_;
+            const float threshold = envelope_ * 0.3f > minThreshold_ ? envelope_ * 0.3f : minThreshold_;
             int next = state_;
-            if (x > hysteresis_) next = 1;
-            else if (x < -hysteresis_) next = -1;
+            if (x > threshold) next = 1;
+            else if (x < -threshold) next = -1;
             if (next != state_) {
                 if (state_ != 0) {
                     DecodedFrame frame;
@@ -51,6 +56,7 @@ public:
     }
 
     int64_t position() const { return position_; }
+    float envelope() const { return envelope_; }  // recent peak level, 0..1
     void reset();
 
 private:
@@ -60,7 +66,9 @@ private:
     void resetWord() { count_ = 0; halfStart_ = -1; }
 
     double sampleRate_;
-    float hysteresis_;
+    float minThreshold_;
+    float decay_;
+    float envelope_ = 0.0f;
     double cell_;
     int state_ = 0;
     int64_t position_ = 0;

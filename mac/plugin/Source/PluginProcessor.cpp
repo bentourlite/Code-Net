@@ -44,13 +44,16 @@ bool CodeNetTapProcessor::isBusesLayoutSupported(const BusesLayout& layouts) con
 
 void CodeNetTapProcessor::prepareToPlay(double sampleRate, int) {
     currentSampleRate = sampleRate;
-    decoder = std::make_unique<codenet::LtcDecoder>(sampleRate);
+    for (auto& d : decoders) d = std::make_unique<codenet::LtcDecoder>(sampleRate);
+    activeChannel = -1;
+    activeLastFrameEnd = 0;
 }
 
 void CodeNetTapProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) {
     juce::ScopedNoDenormals noDenormals;
     const int n = buffer.getNumSamples();
-    if (decoder == nullptr || n == 0 || buffer.getNumChannels() == 0) return;
+    const int channels = std::min(buffer.getNumChannels(), int(decoders.size()));
+    if (decoders[0] == nullptr || n == 0 || channels == 0) return;
 
     // Host clock time of this block's first sample. Hosts that provide it (Ableton
     // Live does, through the AU/VST3 timestamp) give it per block; otherwise use now.
@@ -63,26 +66,39 @@ void CodeNetTapProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
                 fromHost = true;
             }
     hostTimeAvailable.store(fromHost, std::memory_order_relaxed);
-    const int64_t blockStartSample = decoder->position();
+    const int64_t blockStartSample = decoders[0]->position();
     const int64_t trimNs = int64_t(double(latencyTrimMs->load()) * 1.0e6);
     const double sr = currentSampleRate;
+    const int64_t switchAfter = int64_t(sr * 0.1);  // another channel may take over after 100 ms without LTC
 
-    decoder->process(buffer.getReadPointer(0), n, [&](const codenet::DecodedFrame& f) {
-        codenet::FramePacket p;
-        p.timecode = f.timecode;
-        p.userBits = f.userBits;
-        p.flags = codenet::kFlagPlaying;
-        p.frameStartNs = blockNs + int64_t(double(f.startSample - blockStartSample) * 1.0e9 / sr) + trimNs;
-        int start1, size1, start2, size2;
-        fifo.prepareToWrite(1, start1, size1, start2, size2);
-        if (size1 > 0) {
-            pending[size_t(start1)] = p;
-            fifo.finishedWrite(1);
-        }
-        lastFrames.store(f.timecode.frames, std::memory_order_relaxed);
-        lastRate.store(f.timecode.rate, std::memory_order_relaxed);
-        lastDecodeNs.store(nowNs(), std::memory_order_relaxed);
-    });
+    float level = 0.0f;
+    for (int ch = 0; ch < channels; ++ch) {
+        auto& decoder = *decoders[size_t(ch)];
+        decoder.process(buffer.getReadPointer(ch), n, [&](const codenet::DecodedFrame& f) {
+            if (ch != activeChannel) {
+                if (activeChannel >= 0 && f.endSample - activeLastFrameEnd < switchAfter) return;
+                activeChannel = ch;
+                ltcChannel.store(ch, std::memory_order_relaxed);
+            }
+            activeLastFrameEnd = f.endSample;
+            codenet::FramePacket p;
+            p.timecode = f.timecode;
+            p.userBits = f.userBits;
+            p.flags = codenet::kFlagPlaying;
+            p.frameStartNs = blockNs + int64_t(double(f.startSample - blockStartSample) * 1.0e9 / sr) + trimNs;
+            int start1, size1, start2, size2;
+            fifo.prepareToWrite(1, start1, size1, start2, size2);
+            if (size1 > 0) {
+                pending[size_t(start1)] = p;
+                fifo.finishedWrite(1);
+            }
+            lastFrames.store(f.timecode.frames, std::memory_order_relaxed);
+            lastRate.store(f.timecode.rate, std::memory_order_relaxed);
+            lastDecodeNs.store(nowNs(), std::memory_order_relaxed);
+        });
+        level = std::max(level, decoder.envelope());
+    }
+    inputLevel.store(level, std::memory_order_relaxed);
 
     if (muteOutput->load() > 0.5f) buffer.clear();
 }

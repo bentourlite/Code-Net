@@ -32,9 +32,21 @@ void CodeNetTapEditor::paint(juce::Graphics& g) {
 
     g.setFont(juce::FontOptions(13.0f));
     g.setColour(juce::Colours::lightgrey);
-    juce::String line = live ? juce::String("Reading LTC at ") + juce::String(int(rate)) + " fps"
-                             : juce::String("No LTC on this track");
+    const float level = processor.inputLevel.load();
+    const juce::String dB = level > 0.0001f ? juce::String(juce::Decibels::gainToDecibels(level), 0) + " dBFS"
+                                             : juce::String("silent");
+    juce::String line;
+    if (live) {
+        line = juce::String("Reading LTC at ") + juce::String(int(rate)) + " fps, " +
+               (processor.ltcChannel.load() == 1 ? "right" : "left") + " channel, " + dB;
+    } else if (level < 0.001f) {
+        line = "No audio on this track. Press play?";
+    } else {
+        g.setColour(juce::Colours::orange);
+        line = "Audio at " + dB + ", but no LTC found. Is Warp off?";
+    }
     g.drawText(line, 16, 84, 400, 18, juce::Justification::left);
+    g.setColour(juce::Colours::lightgrey);
     g.drawText(juce::String("Frames sent to the Code Net app: ") + juce::String(processor.framesSent.load()), 16,
                104, 400, 18, juce::Justification::left);
     if (!processor.hostTimeAvailable.load()) {

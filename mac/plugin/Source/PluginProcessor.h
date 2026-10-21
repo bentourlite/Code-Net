@@ -5,6 +5,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_core/juce_core.h>
 
+#include <array>
 #include <atomic>
 
 #include "codenet/ltc.hpp"
@@ -44,6 +45,8 @@ public:
     std::atomic<int64_t> lastDecodeNs{0};
     std::atomic<bool> hostTimeAvailable{false};
     std::atomic<uint32_t> framesSent{0};
+    std::atomic<float> inputLevel{0.0f};  // recent peak of the louder channel, 0..1
+    std::atomic<int> ltcChannel{-1};      // channel the LTC was last read from
 
     static int64_t nowNs();  // the Mac host clock (mach_absolute_time) in ns
 
@@ -51,7 +54,10 @@ private:
     void run() override;  // background sender
     void send(const codenet::FramePacket& packet);
 
-    std::unique_ptr<codenet::LtcDecoder> decoder;
+    // One decoder per input channel, so LTC on either side of a stereo clip is read.
+    std::array<std::unique_ptr<codenet::LtcDecoder>, 2> decoders;
+    int activeChannel = -1;
+    int64_t activeLastFrameEnd = 0;  // sample position where the active channel's last frame ended
     double currentSampleRate = 48000.0;
     juce::AbstractFifo fifo{256};
     std::array<codenet::FramePacket, 256> pending;

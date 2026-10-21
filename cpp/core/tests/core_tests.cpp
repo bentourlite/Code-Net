@@ -37,14 +37,14 @@ static void testBits() {
     }
 }
 
-static void testRoundTrip(int rate, int sampleRate, int block) {
+static void testRoundTrip(int rate, int sampleRate, int block, float gain = 0.3f) {
     Timecode start;
     Timecode::fromHMSF(1, 59, 59, rate - 3, rate, start);
     std::vector<float> audio(500, 0.0f);
     const int count = 10;
     for (int k = 0; k < count; ++k) {
         auto f = ltcEncodeFrame(start.next(uint32_t(k)), sampleRate, 0xCAFE);
-        for (float x : f) audio.push_back(0.3f * x);
+        for (float x : f) audio.push_back(gain * x);
     }
     audio.resize(audio.size() + 10, 0.0f);
     LtcDecoder dec(sampleRate);
@@ -88,8 +88,10 @@ int main() {
     testTimecode();
     testBits();
     for (int rate : {25, 30})
-        for (int sr : {44100, 48000, 96000})
+        for (int sr : {44100, 48000, 96000}) {
             for (int block : {32, 512}) testRoundTrip(rate, sr, block);
+            testRoundTrip(rate, sr, 512, 0.005f);  // about -46 dBFS
+        }
     testPacket();
     if (failures) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);

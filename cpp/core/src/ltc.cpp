@@ -51,11 +51,15 @@ std::vector<float> ltcEncodeFrame(const Timecode& tc, int sampleRate, uint32_t u
     return out;
 }
 
-LtcDecoder::LtcDecoder(double sampleRate, float hysteresis)
-    : sampleRate_(sampleRate), hysteresis_(hysteresis), cell_(sampleRate / (kBitsPerFrame * 27.5)) {}
+LtcDecoder::LtcDecoder(double sampleRate, float minThreshold)
+    : sampleRate_(sampleRate),
+      minThreshold_(minThreshold),
+      decay_(float(std::pow(0.5, 1.0 / (0.02 * sampleRate)))),  // 20 ms half-life
+      cell_(sampleRate / (kBitsPerFrame * 27.5)) {}
 
 void LtcDecoder::reset() {
     state_ = 0;
+    envelope_ = 0.0f;
     position_ = 0;
     lastTransition_ = -1;
     cell_ = sampleRate_ / (kBitsPerFrame * 27.5);
