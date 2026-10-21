@@ -120,6 +120,13 @@ struct ReceiverStatus: Decodable, Equatable {
         var offset_ms: Double?
     }
 
+    struct Calibration: Decodable, Equatable {
+        var seq: UInt32
+        var state: String  // measuring, done or failed
+        var message: String?
+        var measured_ms: Double?
+    }
+
     struct Source: Decodable, Equatable {
         var name: String
         var role: String
@@ -144,6 +151,8 @@ struct ReceiverStatus: Decodable, Equatable {
     var device: String?
     var readback: Readback?
     var wifi: Bool?
+    var advance_ms: Double?
+    var calibration: Calibration?
     var uptime_s: Int?
     var sources: [Source]?
 
@@ -153,6 +162,27 @@ struct ReceiverStatus: Decodable, Equatable {
         let id = CodeNet.sourceName(Array(b[6..<22]))
         guard let status = try? JSONDecoder().decode(ReceiverStatus.self, from: Data(b[22...])) else { return nil }
         return (id, status)
+    }
+}
+
+/// Measures or sets a receiver's output advance (device delay compensation).
+struct Calibrate: Equatable {
+    enum Mode: UInt8 { case measure = 0, set = 1 }
+    var receiver: String
+    var mode: Mode
+    var valueUs: Int32
+    var sequence: UInt32
+
+    func encode() -> Data {
+        var d = Data(capacity: 31)
+        d.append(contentsOf: Array("CNET".utf8))
+        d.append(CodeNet.version)
+        d.append(CodeNet.MessageType.calibrate.rawValue)
+        d.append(contentsOf: CodeNet.sourceId(receiver))
+        d.append(mode.rawValue)
+        d.appendBE(valueUs)
+        d.appendBE(sequence)
+        return d
     }
 }
 
