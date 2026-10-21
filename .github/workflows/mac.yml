@@ -1,0 +1,35 @@
+name: mac
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S cpp/core -B build && cmake --build build --parallel && ctest --test-dir build --output-on-failure
+
+  mac:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core tests
+        run: cmake -S cpp/core -B build-core && cmake --build build-core --parallel && ctest --test-dir build-core --output-on-failure
+      - name: App tests
+        working-directory: mac/app
+        run: swift test
+      - name: Build plugin and app
+        run: mac/build.sh
+      - name: Validate AU
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "mac/dist/Code Net Tap.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          auval -v aufx CnTp Tlte
+      - uses: actions/upload-artifact@v4
+        with:
+          name: code-net-mac
+          path: mac/dist
