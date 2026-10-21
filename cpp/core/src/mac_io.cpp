@@ -18,7 +18,9 @@
 
 namespace codenet {
 
-#if !defined(__APPLE__)
+#if defined(_WIN32)
+// See win_io.cpp.
+#elif !defined(__APPLE__)
 
 std::vector<DeviceInfo> listOutputDevices() { return {}; }
 
@@ -32,7 +34,7 @@ std::unique_ptr<DeviceOutput> openMidiOutput(RxService&, const std::string&, std
     return nullptr;
 }
 
-#else
+#else  // __APPLE__
 
 namespace {
 

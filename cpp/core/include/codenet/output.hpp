@@ -42,6 +42,48 @@ private:
     int waveLength_ = 0;
 };
 
+// Turns per-callback device timestamps into a smooth sample clock: timestamps jitter,
+// counting samples does not. The count is anchored to the timestamps and slowly steered to
+// follow them; only a sustained jump (the device restarted) resets it. A port of DacClock
+// in python/codenet/receiver/devices.py.
+class DacClock {
+public:
+    explicit DacClock(int sampleRate) : sampleRate_(sampleRate) {}
+
+    // `measuredNs` is when this block's first sample reaches the output, by the timestamps.
+    int64_t blockStart(int64_t measuredNs, int frames) {
+        if (!started_) {
+            started_ = true;
+            baseNs_ = double(measuredNs);
+            samples_ = 0;
+        }
+        double predicted = baseNs_ + double(samples_) * 1e9 / sampleRate_;
+        const double error = double(measuredNs) - predicted;
+        if (error > kResyncNs || error < -kResyncNs) {
+            if (++outliers_ >= kResyncAfter) {
+                baseNs_ = predicted = double(measuredNs);
+                samples_ = 0;
+                outliers_ = 0;
+            }
+        } else {
+            outliers_ = 0;
+            baseNs_ += error * kGain;
+            predicted += error * kGain;
+        }
+        samples_ += frames;
+        return int64_t(predicted);
+    }
+
+private:
+    static constexpr double kResyncNs = 2e6, kGain = 0.01;
+    static constexpr int kResyncAfter = 16;
+    int sampleRate_;
+    bool started_ = false;
+    double baseNs_ = 0;
+    int64_t samples_ = 0;
+    int outliers_ = 0;
+};
+
 namespace mtc {
 // Quarter-frame message `piece` (0-7) describing `tc`.
 std::array<uint8_t, 2> quarterFrame(const Timecode& tc, int piece);
