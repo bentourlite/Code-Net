@@ -61,3 +61,22 @@ def read(path: Path) -> dict | None:
         return json.loads(Path(path).read_text())
     except (FileNotFoundError, json.JSONDecodeError):
         return None
+
+
+def compact(snap: dict) -> dict:
+    """The part of a snapshot the host app shows in its node list (fits one packet)."""
+    rb = snap.get("readback")
+    return {
+        "name": snap.get("name"),
+        "following": snap.get("following"),
+        "output": snap.get("output"),
+        "rate": snap.get("rate"),
+        "idle": snap.get("idle_reason"),
+        "device": snap.get("output_device"),
+        "readback": {"state": rb["state"], "offset_ms": rb.get("offset_ms")} if rb else None,
+        "wifi": snap.get("wifi_mode", False),
+        "uptime_s": snap.get("uptime_s"),
+        "sources": [{"name": s["name"], "role": s["role"], "valid": s["valid"], "playing": s["playing"],
+                     "gap_ms": s.get("longest_gap_ms"), "offset_ms": s.get("clock_offset_ms")}
+                    for s in snap.get("sources", [])],
+    }

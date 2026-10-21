@@ -20,7 +20,7 @@ import numpy as np
 from .ltc import LtcDecoder, encode_run
 from .net import sender_socket
 from .protocol import (FRAME_PORT, MULTICAST_GROUP, SYNC_PORT, FrameFlags, FramePacket, ProtocolError,
-                       SyncRequest, SyncResponse, decode, source_id)
+                       StatusReport, SyncRequest, SyncResponse, decode, source_id, source_name)
 from .timecode import Timecode
 
 log = logging.getLogger("codenet.sender")
@@ -55,6 +55,7 @@ class SyncResponder:
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind(("", port))
         self.sock.settimeout(0.2)
+        self.receivers: dict[str, tuple[str, bytes]] = {}  # latest status per receiver
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="codenet-sync", daemon=True)
 
@@ -79,7 +80,9 @@ class SyncResponder:
                 req = decode(data)
             except ProtocolError:
                 continue
-            if isinstance(req, SyncRequest):
+            if isinstance(req, StatusReport):
+                self.receivers[source_name(req.receiver)] = (addr[0], req.payload)
+            elif isinstance(req, SyncRequest):
                 resp = SyncResponse(self.host, req.sequence, req.t1, t2, self.clock())
                 self.sock.sendto(resp.encode(), addr)
 

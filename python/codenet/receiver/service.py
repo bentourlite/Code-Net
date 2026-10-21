@@ -8,7 +8,8 @@ import socket
 import threading
 import time
 
-from ..protocol import SYNC_PORT, FramePacket, ProtocolError, SyncRequest, SyncResponse, decode, source_name
+from ..protocol import (SYNC_PORT, FramePacket, ProtocolError, StatusReport, SyncRequest, SyncResponse, decode,
+                        source_name)
 from .core import Receiver
 
 log = logging.getLogger(__name__)
@@ -119,6 +120,17 @@ class ReceiverService:
                 self.receiver.on_frame(msg, t4)
             elif isinstance(msg, SyncResponse):
                 self.receiver.on_sync(msg.host, msg.t1, msg.t2, msg.t3, t4)
+
+    def send_status(self, payload: bytes) -> None:
+        """Report this receiver's status to every host it has heard from."""
+        packet = StatusReport(self.receiver_id, payload).encode()
+        with self.lock:
+            hosts = set(self.host_addresses.values()) | set(self.other_hosts.values())
+        for host in hosts:
+            try:
+                self.sock.sendto(packet, (host, SYNC_PORT))
+            except OSError as exc:
+                log.debug("status to %s failed: %s", host, exc)
 
     def _send_sync(self) -> None:
         for source, host in list(self.host_addresses.items()):

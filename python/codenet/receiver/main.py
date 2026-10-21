@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import signal
 import threading
@@ -160,13 +161,14 @@ def main(argv=None) -> None:
                 offset = f" {rb['offset_ms']:+.2f} ms" if rb["offset_ms"] is not None else ""
                 line += f", readback {st.state.value}{offset}"
             log.info(line)
-            if status_path is not None:
-                with service.lock:
-                    snap = status.snapshot(receiver, now, dict(service.host_addresses), gaps,
-                                           f"{s.output}: {device_name}", rb, idle, started)
-                snap["name"] = s.name
-                snap["wifi_mode"] = s.wifi
+            with service.lock:
+                snap = status.snapshot(receiver, now, dict(service.host_addresses), gaps,
+                                       f"{s.output}: {device_name}", rb, idle, started)
                 snap["other_hosts"] = dict(service.other_hosts)
+            snap["name"] = s.name
+            snap["wifi_mode"] = s.wifi
+            service.send_status(json.dumps(status.compact(snap), separators=(",", ":")).encode())
+            if status_path is not None:
                 try:
                     status.write(status_path, snap)
                 except OSError as exc:
