@@ -6,11 +6,20 @@ import XCTest
 final class ReceiverTests: XCTestCase {
     func testLocalReceiverStartsAndReportsStatus() throws {
         var message = [CChar](repeating: 0, count: 256)
-        var config = cn_receiver_config(name: "test-rx", main: "mac-a", backup: "", group: "none", port: 5299,
-                                        loss_timeout_frames: 2, max_predict_frames: 2, wifi: 0, auto_return: 1,
-                                        advance_ms: 0)
-        let handle = try XCTUnwrap(cn_receiver_create(&config, &message, Int32(message.count)),
-                                   String(cString: message))
+        // The strings only need to live for the create call, which copies them.
+        let created = "test-rx".withCString { name in
+            "mac-a".withCString { main in
+                "".withCString { backup in
+                    "none".withCString { group -> OpaquePointer? in
+                        var config = cn_receiver_config(
+                            name: name, main: main, backup: backup, group: group, port: 5299,
+                            loss_timeout_frames: 2, max_predict_frames: 2, wifi: 0, auto_return: 1, advance_ms: 0)
+                        return cn_receiver_create(&config, &message, Int32(message.count))
+                    }
+                }
+            }
+        }
+        let handle = try XCTUnwrap(created, String(cString: message))
         defer { cn_receiver_destroy(handle) }
         Thread.sleep(forTimeInterval: 1.2)
         var buffer = [CChar](repeating: 0, count: 4096)
