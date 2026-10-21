@@ -24,10 +24,12 @@ codenet-menu
 
 | Item | What it does |
 | --- | --- |
+| Start receiver | Checks the settings (offers to set them up if incomplete), starts or restarts the service, offers to start it at boot and opens the live monitor |
+| Stop receiver | Stops the service |
 | Live monitor | Refreshes every second: output timecode, which host is followed, each host's address, state, last packet, longest packet gap, clock offset and round trip, readback confirmation, other hosts heard, recent switches |
 | Receiver settings | Name, main and backup hosts, soundcard or MIF4, output level, readback input, device delay, multicast or unicast, Wi-Fi testing mode, auto-return. Saves to `/etc/codenet/receiver.json` and offers to restart the service |
 | Network and IP addresses | Shows each interface and its address; set a static IP or DHCP per interface (through NetworkManager), turn Wi-Fi power saving off permanently |
-| Start, stop and logs | Start, restart or stop the receiver, start it at boot, show or follow its log |
+| Service: start at boot, logs | Start, restart or stop the receiver, start it at boot, show or follow its log |
 | List audio and MIDI devices | What the Pi can see |
 | Return to main host now | Asks the receiver to switch back from backup to main |
 
