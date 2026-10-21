@@ -103,3 +103,20 @@ def test_readback_missing_when_nothing_decodes():
     mon.feed(np.zeros(4800, np.float32), 0, [])
     assert mon.status(NS_PER_S, outputting=True).state is Confirmation.MISSING
     assert mon.status(NS_PER_S, outputting=False).state is Confirmation.IDLE
+
+
+def test_dac_clock_ignores_single_outliers_but_follows_sustained_jumps():
+    from codenet.receiver.devices import DacClock
+
+    clock = DacClock(SR)
+    block = 64
+    step = block * NS_PER_S // SR
+    starts = [clock.block_start(i * step, block) for i in range(10)]
+    # One callback timestamp 3 ms late must not move the sample clock.
+    assert abs(clock.block_start(10 * step + 3_000_000, block) - 10 * step) < 1000
+    assert abs(clock.block_start(11 * step, block) - 11 * step) < 1000
+    # A sustained 5 ms jump is followed after a few blocks.
+    for i in range(12, 40):
+        last = clock.block_start(i * step + 5_000_000, block)
+    assert abs(last - (39 * step + 5_000_000)) < 100_000
+    assert starts[0] == 0

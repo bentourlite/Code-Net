@@ -127,6 +127,7 @@ class Sender:
         last: tuple[Timecode, int] | None = None
         last_frame_ns = t0
         next_heartbeat = t0
+        next_late_warning = t0
         while not self._stop.is_set():
             index = position % len(self.audio) if self.loop else position
             if index >= len(self.audio):
@@ -137,6 +138,12 @@ class Sender:
             due = t0 + (position + len(chunk)) * NS_PER_S // self.sample_rate
             while (wait := due - self.clock()) > 0:
                 time.sleep(min(wait / NS_PER_S, 0.001))
+            late = self.clock() - due
+            if late > 20_000_000 and self.clock() >= next_late_warning:
+                # The OS kept us asleep too long, so packets will leave in a burst.
+                log.warning("sender woke %.0f ms late; on macOS keep Terminal in front or run under caffeinate -i",
+                            late / 1e6)
+                next_late_warning = self.clock() + NS_PER_S
             for frame in decoder.feed(chunk):
                 start_ns = t0 + frame.start_sample * NS_PER_S // self.sample_rate + self.latency_ns
                 self._send(frame.timecode, frame.user_bits, start_ns, FrameFlags.PLAYING)

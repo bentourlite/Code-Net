@@ -21,12 +21,14 @@ class DacClock:
     The count is anchored to the timestamps and slowly steered to follow them.
     """
 
-    def __init__(self, sample_rate: int, resync_ns: int = 2_000_000, gain: float = 0.01):
+    def __init__(self, sample_rate: int, resync_ns: int = 2_000_000, gain: float = 0.01, resync_after: int = 16):
         self.sample_rate = sample_rate
         self.resync_ns = resync_ns
         self.gain = gain
+        self.resync_after = resync_after
         self._base_ns: float | None = None
         self._samples = 0
+        self._outliers = 0
 
     def block_start(self, measured_ns: int, frames: int) -> int:
         if self._base_ns is None:
@@ -34,9 +36,15 @@ class DacClock:
         predicted = self._base_ns + self._samples * NS_PER_S / self.sample_rate
         error = measured_ns - predicted
         if abs(error) > self.resync_ns:
-            log.info("audio clock resync by %.2f ms", error / 1e6)
-            self._base_ns, self._samples, predicted = float(measured_ns), 0, float(measured_ns)
+            # A single late or early callback timestamp is noise; only a sustained
+            # difference (the device really restarted or drifted) moves the clock.
+            self._outliers += 1
+            if self._outliers >= self.resync_after:
+                log.info("audio clock resync by %.2f ms", error / 1e6)
+                self._base_ns, self._samples, predicted = float(measured_ns), 0, float(measured_ns)
+                self._outliers = 0
         else:
+            self._outliers = 0
             self._base_ns += error * self.gain
             predicted += error * self.gain
         self._samples += frames

@@ -25,6 +25,8 @@ class ReceiverService:
         self.lock = threading.Lock()
         self.host_addresses: dict[bytes, str] = {}
         self.packets_received = 0
+        self._last_frame_rx: dict[bytes, int] = {}
+        self._max_gap_ns: dict[bytes, int] = {}
         self._ignored: set[bytes] = set()
         self._seq = 0
         self._stop = threading.Event()
@@ -33,6 +35,13 @@ class ReceiverService:
     def frame_at(self, local_ns: int):
         with self.lock:
             return self.receiver.frame_at(local_ns)
+
+    def take_max_gaps(self) -> dict[str, float]:
+        """Longest gap between frame packets per host since the last call, in ms."""
+        with self.lock:
+            gaps = {source_name(s): g / 1e6 for s, g in self._max_gap_ns.items()}
+            self._max_gap_ns.clear()
+            return gaps
 
     def describe_idle(self, now_ns: int) -> str:
         """Why nothing is being output, for the status line."""
@@ -99,6 +108,11 @@ class ReceiverService:
                 if msg.source in self.receiver.sources and self.host_addresses.get(msg.source) != host:
                     log.info("host %s is at %s", source_name(msg.source), host)
                     self.host_addresses[msg.source] = host
+                if msg.source in self.receiver.sources:
+                    last = self._last_frame_rx.get(msg.source)
+                    if last is not None:
+                        self._max_gap_ns[msg.source] = max(self._max_gap_ns.get(msg.source, 0), t4 - last)
+                    self._last_frame_rx[msg.source] = t4
                 self.receiver.on_frame(msg, t4)
             elif isinstance(msg, SyncResponse):
                 self.receiver.on_sync(msg.host, msg.t1, msg.t2, msg.t3, t4)

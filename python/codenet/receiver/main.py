@@ -81,6 +81,9 @@ def main(argv=None) -> None:
             now = time.monotonic_ns()
             frame = service.frame_at(now)
             line = f"output {frame.timecode}" if frame else f"output stopped ({service.describe_idle(now)})"
+            gaps = service.take_max_gaps()
+            if gaps:
+                line += ", longest packet gap " + ", ".join(f"{n} {g:.0f} ms" for n, g in gaps.items())
             if readback is not None:
                 st = readback.status(now, outputting=frame is not None)
                 offset = f" {st.offset_ns / 1e6:+.2f} ms" if st.offset_ns is not None else ""
