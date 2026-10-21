@@ -29,7 +29,8 @@ class ReceiverService:
         self._last_frame_rx: dict[bytes, int] = {}
         self._max_gap_ns: dict[bytes, int] = {}
         self._ignored: set[bytes] = set()
-        self.other_hosts: dict[str, str] = {}  # hosts heard that are not main or backup
+        self.other_hosts: dict[str, str] = {}  # hosts heard in the last 10 s that are not main or backup
+        self._other_heard_ns: dict[str, int] = {}
         self._seq = 0
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -109,6 +110,7 @@ class ReceiverService:
                     self._ignored.add(msg.source)
                 if msg.source not in self.receiver.sources:
                     self.other_hosts[source_name(msg.source)] = host
+                    self._other_heard_ns[source_name(msg.source)] = t4
                 if msg.source in self.receiver.sources and self.host_addresses.get(msg.source) != host:
                     log.info("host %s is at %s", source_name(msg.source), host)
                     self.host_addresses[msg.source] = host
@@ -125,6 +127,11 @@ class ReceiverService:
         """Report this receiver's status to every host it has heard from."""
         packet = StatusReport(self.receiver_id, payload).encode()
         with self.lock:
+            now = self.clock()
+            for name, heard in list(self._other_heard_ns.items()):
+                if now - heard > 10_000_000_000:
+                    del self._other_heard_ns[name]
+                    self.other_hosts.pop(name, None)
             hosts = set(self.host_addresses.values()) | set(self.other_hosts.values())
         for host in hosts:
             try:

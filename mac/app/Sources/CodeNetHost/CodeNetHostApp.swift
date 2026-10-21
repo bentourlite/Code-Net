@@ -30,6 +30,7 @@ extension Engine {
 struct DashboardView: View {
     @ObservedObject var engine: Engine
     @State private var targetsText = ""
+    @State private var nameText = ""
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -54,7 +55,10 @@ struct DashboardView: View {
         }
         .padding(16)
         .frame(width: 520)
-        .onAppear { targetsText = engine.settings.unicastTargets.joined(separator: ", ") }
+        .onAppear {
+            targetsText = engine.settings.unicastTargets.joined(separator: ", ")
+            nameText = engine.settings.hostName
+        }
     }
 
     private var header: some View {
@@ -93,10 +97,10 @@ struct DashboardView: View {
             Text("This host").font(.headline)
             HStack {
                 Text("Host name").frame(width: 110, alignment: .leading)
-                TextField("mac-a", text: Binding(
-                    get: { engine.settings.hostName },
-                    set: { engine.settings.hostName = Self.fitSourceId($0) }))
+                // Applied on Return, so receivers don't see every partial name while typing.
+                TextField("mac-a", text: $nameText, onCommit: applyName)
                     .textFieldStyle(.roundedBorder)
+                Button("Apply", action: applyName)
             }
             Toggle("Send by multicast (\(CodeNet.multicastGroup))", isOn: Binding(
                 get: { engine.settings.multicast }, set: { engine.settings.multicast = $0 }))
@@ -119,6 +123,12 @@ struct DashboardView: View {
             out.append(c)
         }
         return out
+    }
+
+    private func applyName() {
+        let name = Self.fitSourceId(nameText.trimmingCharacters(in: .whitespaces))
+        nameText = name
+        if !name.isEmpty { engine.settings.hostName = name }
     }
 
     private func applyTargets() {
