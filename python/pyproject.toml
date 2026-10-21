@@ -12,6 +12,7 @@ dev = ["pytest>=7"]
 [project.scripts]
 codenet-receiver = "codenet.receiver.main:main"
 codenet-sender = "codenet.sender:main"
+codenet-menu = "codenet.pi.menu:main"
 
 [build-system]
 requires = ["setuptools>=64"]
