@@ -17,6 +17,9 @@ APP="$DIST/Code Net.app"
 mkdir -p "$APP/Contents/MacOS"
 cp "$BIN/CodeNetHost" "$APP/Contents/MacOS/"
 cp app/Support/Info.plist "$APP/Contents/"
+BUILD="${GITHUB_RUN_NUMBER:-0}"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString 0.2.$BUILD" -c "Set :CFBundleVersion $BUILD" \
+  "$APP/Contents/Info.plist"
 
 # With a Developer ID (CODENET_SIGN_APP / CODENET_SIGN_INSTALLER, e.g. "Developer ID Application:
 # Tourlite Ltd (TEAMID)") the bundles are signed for distribution and packed into a notarised
@@ -31,7 +34,7 @@ else
 fi
 
 if [[ -n "${CODENET_SIGN_INSTALLER:-}" ]]; then
-  VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" app/Support/Info.plist)
+  VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$APP/Contents/Info.plist")
   ROOT="$DIST/pkgroot"
   mkdir -p "$ROOT/Applications" "$ROOT/Library/Audio/Plug-Ins/Components" "$ROOT/Library/Audio/Plug-Ins/VST3"
   ditto "$APP" "$ROOT/Applications/Code Net.app"

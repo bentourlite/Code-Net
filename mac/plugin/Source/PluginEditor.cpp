@@ -23,6 +23,9 @@ void CodeNetTapEditor::paint(juce::Graphics& g) {
     g.setColour(juce::Colours::white);
     g.setFont(juce::FontOptions(14.0f, juce::Font::bold));
     g.drawText("CODE NET TAP", 16, 10, 300, 20, juce::Justification::left);
+    g.setColour(juce::Colours::grey);
+    g.setFont(juce::FontOptions(12.0f));
+    g.drawText("v" CODENET_VERSION, getWidth() - 116, 10, 100, 20, juce::Justification::right);
 
     juce::String tc = "--:--:--:--";
     if (rate != 0) tc = codenet::Timecode{processor.lastFrames.load(), rate}.toString();

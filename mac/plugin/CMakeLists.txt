@@ -1,5 +1,11 @@
 cmake_minimum_required(VERSION 3.22)
-project(CodeNetTap VERSION 0.1.0)
+# The patch number is the CI build number, so each build has a new Audio Unit version
+# and hosts re-scan it instead of using a cached copy.
+set(CODENET_BUILD_NUMBER "$ENV{GITHUB_RUN_NUMBER}")
+if(NOT CODENET_BUILD_NUMBER)
+  set(CODENET_BUILD_NUMBER 0)
+endif()
+project(CodeNetTap VERSION 0.2.${CODENET_BUILD_NUMBER})
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
@@ -35,6 +41,7 @@ juce_add_plugin(CodeNetTap
 
 target_sources(CodeNetTap PRIVATE Source/PluginProcessor.cpp Source/PluginEditor.cpp)
 target_compile_definitions(CodeNetTap PUBLIC
+  CODENET_VERSION="${PROJECT_VERSION}"
   JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_VST3_CAN_REPLACE_VST2=0 JUCE_DISPLAY_SPLASH_SCREEN=0)
 target_link_libraries(CodeNetTap
   PRIVATE codenet_core juce::juce_audio_utils

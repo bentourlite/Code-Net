@@ -48,7 +48,8 @@ struct DashboardView: View {
             Divider()
             settingsSection
             HStack {
-                Text("Code Net").font(.caption).foregroundStyle(.secondary)
+                Text("Code Net \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev")")
+                    .font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button("Quit") { NSApplication.shared.terminate(nil) }
             }
