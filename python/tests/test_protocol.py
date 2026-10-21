@@ -36,3 +36,22 @@ def test_clock_estimator_prefers_lowest_round_trip():
     est.add(t1=1000, t2=1_005_000, t3=1_005_100, t4=1200 + 5000)
     assert est.best.offset_ns == 1_000_000
     assert est.host_to_local(2_000_000) == 1_000_000
+
+
+def test_status_report_round_trip():
+    from codenet.protocol import StatusReport
+
+    rep = StatusReport(source_id("pi-1"), b'{"output":"01:00:00:00"}')
+    assert decode(rep.encode()) == rep
+    with pytest.raises(ValueError):
+        StatusReport(source_id("pi-1"), b"x" * 2000).encode()
+
+
+def test_assign_round_trip():
+    from codenet.protocol import Assign
+
+    a = Assign(source_id("pi-1"), source_id("mac-a"), None, 9)
+    assert decode(a.encode()) == a
+    b = Assign(source_id("pi-1"), source_id("mac-a"), source_id("mac-b"), 10)
+    assert decode(b.encode()) == b
+    assert len(b.encode()) == 58

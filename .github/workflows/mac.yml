@@ -1,0 +1,65 @@
+name: mac
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S cpp/core -B build && cmake --build build --parallel && ctest --test-dir build --output-on-failure
+
+  mac:
+    runs-on: macos-14
+    env:
+      HAS_DEVELOPER_ID: ${{ secrets.MAC_CERTS_P12 != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core tests
+        run: cmake -S cpp/core -B build-core && cmake --build build-core --parallel && ctest --test-dir build-core --output-on-failure
+      - name: App tests
+        working-directory: mac/app
+        run: swift test
+      - name: Load Developer ID certificates
+        if: env.HAS_DEVELOPER_ID == 'true'
+        env:
+          CERTS_P12: ${{ secrets.MAC_CERTS_P12 }}
+          CERTS_PASSWORD: ${{ secrets.MAC_CERTS_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          KEYCHAIN="$RUNNER_TEMP/codenet.keychain-db"
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          echo "$CERTS_P12" | base64 --decode > "$RUNNER_TEMP/certs.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/certs.p12" -P "$CERTS_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/certs.p12"
+          APP_ID=$(security find-identity -v -p codesigning "$KEYCHAIN" | grep -o '"Developer ID Application: [^"]*"' | head -1 | tr -d '"')
+          INSTALLER_ID=$(security find-identity -v "$KEYCHAIN" | grep -o '"Developer ID Installer: [^"]*"' | head -1 | tr -d '"')
+          echo "CODENET_SIGN_APP=$APP_ID" >> "$GITHUB_ENV"
+          echo "CODENET_SIGN_INSTALLER=$INSTALLER_ID" >> "$GITHUB_ENV"
+          if [[ -n "$APPLE_ID" ]]; then
+            xcrun notarytool store-credentials codenet --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" \
+              --password "$APPLE_APP_PASSWORD" --keychain "$KEYCHAIN"
+            echo "CODENET_NOTARY_PROFILE=codenet" >> "$GITHUB_ENV"
+          fi
+      - name: Build plugin and app
+        run: mac/build.sh
+      - name: Validate AU
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          cp -R "mac/dist/Code Net Tap.component" ~/Library/Audio/Plug-Ins/Components/
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          auval -v aufx CnTp Tlte
+      - uses: actions/upload-artifact@v4
+        with:
+          name: code-net-mac
+          path: mac/dist

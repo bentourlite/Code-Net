@@ -18,7 +18,8 @@ def test_settings_round_trip_and_validation(tmp_path):
     loaded = settings.load(path)
     assert loaded == s
     assert loaded.effective_windows() == (6, 6)
-    assert settings.ReceiverSettings(main="").validate() == ["main is not set"]
+    assert settings.ReceiverSettings(main="").validate() == []  # assigned later from a Mac
+    assert settings.ReceiverSettings(main="", backup="mac-b").validate() == ["a backup needs a main host"]
     assert "main and backup must be different hosts" in settings.ReceiverSettings(main="a", backup="a").validate()
 
 

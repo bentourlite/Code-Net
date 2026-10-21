@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import signal
 import threading
@@ -97,7 +98,7 @@ def main(argv=None) -> None:
     if loss_timeout > max_predict:
         log.warning("loss timeout is longer than the prediction window; failover will leave a gap")
 
-    config = ReceiverConfig(main=source_id(s.main), backup=source_id(s.backup) if s.backup else None,
+    config = ReceiverConfig(main=source_id(s.main) if s.main else None, backup=source_id(s.backup) if s.backup else None,
                             loss_timeout_frames=loss_timeout, max_predict_frames=max_predict,
                             auto_return=s.auto_return, output_advance_ns=int(s.advance_ms * 1_000_000))
     receiver = Receiver(config)
@@ -137,11 +138,22 @@ def main(argv=None) -> None:
         log.warning("return to main requested")
 
     signal.signal(signal.SIGUSR1, return_to_main)
+    def save_assignment(main: str, backup: str) -> None:
+        s.main, s.backup = main, backup
+        config_path = args.config or settings_mod.DEFAULT_CONFIG
+        try:
+            stored = settings_mod.load(config_path)
+            stored.main, stored.backup = main, backup
+            settings_mod.save(stored, config_path)
+        except OSError as exc:
+            log.error("could not save the new main/backup to %s: %s", config_path, exc)
+
+    service.on_assign = save_assignment
     status_path = _status_path(args)
     started = time.time()
     service.start()
     device.start()
-    log.info("receiver %s following main=%s backup=%s, output %s on %s", s.name, s.main, s.backup or "-",
+    log.info("receiver %s following main=%s backup=%s, output %s on %s", s.name, s.main or "-", s.backup or "-",
              s.output, device_name)
     try:
         while not stop.wait(1.0):
@@ -160,13 +172,15 @@ def main(argv=None) -> None:
                 offset = f" {rb['offset_ms']:+.2f} ms" if rb["offset_ms"] is not None else ""
                 line += f", readback {st.state.value}{offset}"
             log.info(line)
-            if status_path is not None:
-                with service.lock:
-                    snap = status.snapshot(receiver, now, dict(service.host_addresses), gaps,
-                                           f"{s.output}: {device_name}", rb, idle, started)
-                snap["name"] = s.name
-                snap["wifi_mode"] = s.wifi
+            with service.lock:
+                snap = status.snapshot(receiver, now, dict(service.host_addresses), gaps,
+                                       f"{s.output}: {device_name}", rb, idle, started)
                 snap["other_hosts"] = dict(service.other_hosts)
+            snap["name"] = s.name
+            snap["main"], snap["backup"] = s.main, s.backup or None
+            snap["wifi_mode"] = s.wifi
+            service.send_status(json.dumps(status.compact(snap), separators=(",", ":")).encode())
+            if status_path is not None:
                 try:
                     status.write(status_path, snap)
                 except OSError as exc:

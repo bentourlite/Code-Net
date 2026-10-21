@@ -36,10 +36,12 @@ class ReceiverSettings:
     def validate(self) -> list[str]:
         problems = []
         for label, value in (("name", self.name), ("main", self.main), ("backup", self.backup)):
-            if label != "backup" and not value:
+            if label == "name" and not value:
                 problems.append(f"{label} is not set")
             if len(value.encode("utf-8")) > 16:
                 problems.append(f"{label} must be 16 bytes or fewer")
+        if self.backup and not self.main:
+            problems.append("a backup needs a main host")
         if self.main and self.main == self.backup:
             problems.append("main and backup must be different hosts")
         if self.output not in ("soundcard", "mif4"):

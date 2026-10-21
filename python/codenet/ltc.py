@@ -62,7 +62,7 @@ def _encode_cached(frames: int, rate: int, user_bits: int, sample_rate: int) -> 
     bits = frame_bits(Timecode(frames, rate), user_bits)
     spf = samples_per_frame(sample_rate, rate)
     # Half-cell boundaries, rounded so fractional cell lengths do not drift.
-    edges = [round(i * spf / (2 * BITS_PER_FRAME)) for i in range(2 * BITS_PER_FRAME + 1)]
+    edges = [int(i * spf / (2 * BITS_PER_FRAME) + 0.5) for i in range(2 * BITS_PER_FRAME + 1)]  # same as C++ lround
     out = np.empty(spf, dtype=np.float32)
     level = -1.0
     for i, bit in enumerate(bits):

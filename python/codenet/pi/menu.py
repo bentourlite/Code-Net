@@ -89,7 +89,7 @@ def render_monitor(st: dict | None, now: float | None = None, service_state: str
         lines.append(f"Readback   {rb['state'].upper()}{offset}  ({rb.get('timecode') or '-'})")
     lines.append("")
     lines.append(f"{'HOST':<17}{'ROLE':<8}{'ADDRESS':<17}{'STATE':<10}{'TIMECODE':<13}{'LAST':>7}"
-                 f"{'GAP':>7}{'OFFSET':>10}{'RTT':>8}")
+                 f"{'GAP':>7}{'CLOCK':>8}{'RTT':>9}")
     for src in st.get("sources", []):
         state = "PLAYING" if src["valid"] and src["playing"] else "STOPPED" if src["valid"] else "LOST"
         if src.get("last_packet_ms_ago") is None:
@@ -97,8 +97,8 @@ def render_monitor(st: dict | None, now: float | None = None, service_state: str
         lines.append(
             f"{src['name']:<17}{src['role']:<8}{src.get('address') or '-':<17}{state:<10}"
             f"{src.get('last_timecode') or '-':<13}{_ms(src.get('last_packet_ms_ago')):>7}"
-            f"{_ms(src.get('longest_gap_ms')):>7}{_ms(src.get('clock_offset_ms'), 2):>10}"
-            f"{_ms(src.get('round_trip_ms'), 2):>8}")
+            f"{_ms(src.get('longest_gap_ms')):>7}{'synced' if src.get('clock_offset_ms') is not None else '-':>8}"
+            f"{_ms(src.get('round_trip_ms'), 2):>9}")
     others = st.get("other_hosts") or {}
     if others:
         lines.append("")

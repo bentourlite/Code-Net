@@ -143,3 +143,58 @@ def test_wider_windows_ride_through_wifi_sized_gaps():
     t = 4 * FRAME  # ~130 ms with no packets
     rx.update(t)
     assert rx.active is not None and rx.frame_at(t) is not None
+
+
+def test_assignment_swaps_roles_and_keeps_clock_sync():
+    rx = make()
+    feed(rx, 0)
+    assert rx.active.role is Role.MAIN
+    rx.set_sources(BACKUP, MAIN, 2 * FRAME)
+    assert rx.sources[BACKUP].role is Role.MAIN and rx.sources[MAIN].role is Role.BACKUP
+    assert rx.sources[BACKUP].clock.ready
+    feed(rx, 1)
+    assert rx.active.source == BACKUP
+
+
+def test_assignment_drops_an_unassigned_active_host():
+    rx = make()
+    feed(rx, 0)
+    other = source_id("mac-c")
+    rx.set_sources(other, None, 2 * FRAME)
+    assert rx.active is None and rx.switches[-1].reason == "host unassigned"
+    assert list(rx.sources) == [other]
+
+
+def test_service_applies_assignment_from_a_host():
+    import socket
+
+    from codenet.protocol import Assign
+    from codenet.receiver.service import ReceiverService
+
+    rx = Receiver(ReceiverConfig(main=MAIN))
+    svc = ReceiverService(rx, socket.socket(socket.AF_INET, socket.SOCK_DGRAM), source_id("pi"))
+    saved = []
+    svc.on_assign = lambda main, backup: saved.append((main, backup))
+    other = source_id("mac-c")
+    svc._handle(frame(other, 0).encode(), "10.0.0.3")
+    assert "mac-c" in svc.other_hosts
+
+    svc._handle(Assign(source_id("pi-2"), other, MAIN, 1).encode(), "10.0.0.3")  # another receiver's
+    assert saved == []
+    svc._handle(Assign(source_id("pi"), other, MAIN, 2).encode(), "10.0.0.3")
+    svc._handle(Assign(source_id("pi"), other, MAIN, 2).encode(), "10.0.0.3")  # repeat is ignored
+    assert saved == [("mac-c", "mac-a")]
+    assert rx.config.main == other and svc.host_addresses[other] == "10.0.0.3"
+    svc._handle(Assign(source_id("pi"), other, other, 3).encode(), "10.0.0.3")  # main == backup
+    assert saved == [("mac-c", "mac-a")]
+
+
+def test_receiver_without_a_main_waits_for_an_assignment():
+    rx = Receiver(ReceiverConfig(main=None))
+    rx.on_sync(MAIN, 0, 0, 0, 0)
+    feed(rx, 0, sources=(MAIN,))
+    assert rx.active is None and rx.frame_at(FRAME) is None
+    rx.set_sources(MAIN, None, FRAME)
+    rx.on_sync(MAIN, 0, 0, 0, 0)
+    feed(rx, 1, sources=(MAIN,))
+    assert rx.active.role is Role.MAIN

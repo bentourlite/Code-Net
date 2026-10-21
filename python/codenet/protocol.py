@@ -22,6 +22,8 @@ class MessageType(IntEnum):
     FRAME = 1
     SYNC_REQUEST = 2
     SYNC_RESPONSE = 3
+    STATUS = 4  # receiver -> host, JSON summary once a second
+    ASSIGN = 5  # host -> receiver, sets its main and backup hosts
 
 
 class FrameFlags(IntFlag):
@@ -46,6 +48,9 @@ _HEADER = struct.Struct(">4sBB")
 _FRAME = struct.Struct(">4sBBBB16sHIIIq")
 _SYNC_REQUEST = struct.Struct(">4sBB16sIq")
 _SYNC_RESPONSE = struct.Struct(">4sBB16sIqqq")
+_STATUS_HEADER = struct.Struct(">4sBB16s")
+_ASSIGN = struct.Struct(">4sBB16s16s16sI")
+MAX_STATUS_BYTES = 1200
 
 
 @dataclass(frozen=True)
@@ -100,7 +105,34 @@ class SyncResponse:
                                    self.sequence & 0xFFFFFFFF, self.t1, self.t2, self.t3)
 
 
-Message = FramePacket | SyncRequest | SyncResponse
+@dataclass(frozen=True)
+class StatusReport:
+    """A receiver's state for the host app's node list. `payload` is a JSON object."""
+
+    receiver: bytes
+    payload: bytes
+
+    def encode(self) -> bytes:
+        if len(self.payload) > MAX_STATUS_BYTES:
+            raise ValueError("status payload too large")
+        return _STATUS_HEADER.pack(MAGIC, VERSION, MessageType.STATUS, self.receiver) + self.payload
+
+
+@dataclass(frozen=True)
+class Assign:
+    """Sets a receiver's main and backup hosts (from the host app's dashboard)."""
+
+    receiver: bytes
+    main: bytes
+    backup: bytes | None
+    sequence: int
+
+    def encode(self) -> bytes:
+        return _ASSIGN.pack(MAGIC, VERSION, MessageType.ASSIGN, self.receiver, self.main,
+                            self.backup or bytes(SOURCE_ID_SIZE), self.sequence & 0xFFFFFFFF)
+
+
+Message = FramePacket | SyncRequest | SyncResponse | StatusReport | Assign
 
 
 class ProtocolError(ValueError):
@@ -125,6 +157,14 @@ def decode(data: bytes) -> Message:
         if kind == MessageType.SYNC_RESPONSE:
             _, _, _, hid, seq, t1, t2, t3 = _SYNC_RESPONSE.unpack(data)
             return SyncResponse(hid, seq, t1, t2, t3)
+        if kind == MessageType.STATUS:
+            _, _, _, rid = _STATUS_HEADER.unpack_from(data)
+            return StatusReport(rid, bytes(data[_STATUS_HEADER.size:]))
+        if kind == MessageType.ASSIGN:
+            _, _, _, rid, main, backup, seq = _ASSIGN.unpack(data)
+            if not main.strip(b"\0"):
+                raise ProtocolError("assignment without a main host")
+            return Assign(rid, main, backup if backup.strip(b"\0") else None, seq)
     except struct.error as exc:
         raise ProtocolError(f"malformed packet: {exc}") from exc
     except ValueError as exc:
