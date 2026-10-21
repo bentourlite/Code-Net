@@ -5,10 +5,11 @@ import SwiftUI
 @main
 struct CodeNetHostApp: App {
     @StateObject private var engine = Engine()
+    @StateObject private var receiver = ReceiverEngine()
 
     var body: some Scene {
         MenuBarExtra {
-            DashboardView(engine: engine)
+            DashboardView(engine: engine, receiver: receiver)
         } label: {
             Image(systemName: engine.menuBarSymbol)
         }
@@ -29,6 +30,7 @@ extension Engine {
 
 struct DashboardView: View {
     @ObservedObject var engine: Engine
+    @ObservedObject var receiver: ReceiverEngine
     @State private var targetsText = ""
     @State private var nameText = ""
 
@@ -45,6 +47,8 @@ struct DashboardView: View {
             }
             Divider()
             receiversSection
+            Divider()
+            ReceiveSection(receiver: receiver, hostChoices: hostChoices)
             Divider()
             settingsSection
             HStack {
@@ -102,6 +106,8 @@ struct DashboardView: View {
             names.formUnion(r.status.heard ?? [])
             names.formUnion((r.status.sources ?? []).map(\.name))
         }
+        names.formUnion(receiver.status?.heard ?? [])
+        names.formUnion((receiver.status?.sources ?? []).map(\.name))
         return names.filter { !$0.isEmpty }.sorted()
     }
 
@@ -252,5 +258,126 @@ struct ReceiverRow: View {
             parts.append("output \(rb.state)\(offset)")
         }
         return parts.joined(separator: "  ·  ")
+    }
+}
+
+/// Receiving timecode on this Mac, like a Pi: follow a main and backup host and output
+/// fresh LTC on an audio interface or MTC to a MIF4.
+struct ReceiveSection: View {
+    @ObservedObject var receiver: ReceiverEngine
+    let hostChoices: [String]
+    @State private var nameText = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Toggle(isOn: $receiver.settings.enabled) {
+                Text("Receive timecode on this Mac").font(.headline)
+            }
+            if receiver.settings.enabled {
+                statusLine
+                if let error = receiver.error {
+                    Label(error, systemImage: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange).font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                HStack {
+                    Text("Receiver name").frame(width: 110, alignment: .leading)
+                    TextField("mac-rx", text: $nameText, onCommit: applyName)
+                        .textFieldStyle(.roundedBorder)
+                    Button("Apply", action: applyName)
+                }
+                HStack(spacing: 8) {
+                    Picker("Main", selection: $receiver.settings.main) {
+                        Text("None").tag("")
+                        ForEach(choices(including: receiver.settings.main), id: \.self) { Text($0).tag($0) }
+                    }
+                    Picker("Backup", selection: $receiver.settings.backup) {
+                        Text("None").tag("")
+                        ForEach(choices(including: receiver.settings.backup).filter { $0 != receiver.settings.main },
+                                id: \.self) { Text($0).tag($0) }
+                    }
+                }
+                HStack {
+                    Picker("Output", selection: outputSelection) {
+                        Text("None").tag("")
+                        ForEach(receiver.devices) { Text($0.label).tag($0.id) }
+                    }
+                    Button {
+                        receiver.refreshDevices()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .help("Look for new audio and MIDI devices")
+                }
+                if receiver.settings.outputKind == .audio, let device = selectedDevice {
+                    HStack {
+                        Picker("Channel", selection: $receiver.settings.channel) {
+                            Text("All").tag(-1)
+                            ForEach(0..<max(device.channels, 1), id: \.self) { Text("\($0 + 1)").tag($0) }
+                        }
+                        .frame(width: 150)
+                        Text("Level").padding(.leading, 8)
+                        Slider(value: $receiver.settings.level, in: 0.05...1)
+                    }
+                }
+                HStack {
+                    Toggle("Multicast", isOn: $receiver.settings.multicast)
+                    Toggle("Wi-Fi mode", isOn: $receiver.settings.wifi)
+                    Spacer()
+                    Button("Return to main", action: receiver.returnToMain)
+                }
+                .font(.callout)
+            }
+        }
+        .onAppear { nameText = receiver.settings.name }
+    }
+
+    private var statusLine: some View {
+        let s = receiver.status
+        let running = s?.output != nil
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack {
+                Circle().fill(running ? Color.green : Color.secondary).frame(width: 10, height: 10)
+                Text(s?.output ?? "--:--:--:--").font(.system(.title3, design: .monospaced))
+                if let following = s?.following { Text("following \(following)").foregroundStyle(.secondary) }
+            }
+            if let idle = s?.idle {
+                Text(idle).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            } else if let device = s?.device {
+                Text(device).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var selectedDevice: OutputDevice? {
+        receiver.devices.first { $0.kind == receiver.settings.outputKind && $0.deviceId == receiver.settings.deviceId }
+    }
+
+    private var outputSelection: Binding<String> {
+        Binding(
+            get: { selectedDevice?.id ?? "" },
+            set: { id in
+                var s = receiver.settings
+                if let device = receiver.devices.first(where: { $0.id == id }) {
+                    s.outputKind = device.kind
+                    s.deviceId = device.deviceId
+                    if device.kind == .audio && s.channel >= device.channels { s.channel = 0 }
+                } else {
+                    s.deviceId = ""
+                }
+                receiver.settings = s
+            })
+    }
+
+    private func choices(including current: String) -> [String] {
+        var names = hostChoices
+        if !current.isEmpty && !names.contains(current) { names.append(current) }
+        return names
+    }
+
+    private func applyName() {
+        let name = DashboardView.fitSourceId(nameText.trimmingCharacters(in: .whitespaces))
+        nameText = name
+        if !name.isEmpty { receiver.settings.name = name }
     }
 }

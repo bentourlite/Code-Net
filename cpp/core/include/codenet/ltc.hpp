@@ -19,6 +19,9 @@ std::array<uint8_t, kBitsPerFrame> ltcFrameBits(const Timecode& tc, uint32_t use
 // One frame of LTC audio at full scale; the level before the frame is taken as -1.
 std::vector<float> ltcEncodeFrame(const Timecode& tc, int sampleRate, uint32_t userBits = 0);
 
+// The same without allocating: writes up to `capacity` samples, returns the frame length.
+int ltcEncodeFrameInto(const Timecode& tc, int sampleRate, uint32_t userBits, float* out, int capacity);
+
 struct DecodedFrame {
     Timecode timecode;
     uint32_t userBits = 0;

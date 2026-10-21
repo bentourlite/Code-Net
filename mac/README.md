@@ -44,6 +44,18 @@ until the Pi confirms the change.
 The latency trim shifts every frame stamp. Leave it at 0 unless a readback measurement shows
 an offset.
 
+## Receiving on a Mac
+
+Any Mac with Code Net can also be a receiver, doing the same job as a Pi. In the menu, turn on
+**Receive timecode on this Mac**, give it a receiver name, pick its main and backup hosts and
+choose an output:
+
+- **Audio (LTC)**: fresh LTC on an audio interface output (pick the channel, or All).
+- **MIDI (MTC)**: MIDI timecode to a Rosendahl MIF4, which outputs it as LTC.
+
+It fails over between main and backup like a Pi, shows up in every Code Net dashboard and can
+be reassigned from any of them. A Mac can send and receive at the same time.
+
 ## Signed installer (no "malware" warning)
 
 macOS warns about any app that isn't signed with an Apple Developer ID and notarised. Once these

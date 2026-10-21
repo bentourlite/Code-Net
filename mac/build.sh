@@ -11,8 +11,8 @@ cmake --build plugin/build --config Release --parallel
 ARTEFACTS=plugin/build/CodeNetTap_artefacts/Release
 cp -R "$ARTEFACTS/AU/Code Net Tap.component" "$ARTEFACTS/VST3/Code Net Tap.vst3" "$DIST/"
 
-(cd app && swift build -c release --arch arm64 --arch x86_64)
-BIN=$(cd app && swift build -c release --arch arm64 --arch x86_64 --show-bin-path)
+(cd .. && swift build -c release --arch arm64 --arch x86_64 --product CodeNetHost)
+BIN=$(cd .. && swift build -c release --arch arm64 --arch x86_64 --show-bin-path)
 APP="$DIST/Code Net.app"
 mkdir -p "$APP/Contents/MacOS"
 cp "$BIN/CodeNetHost" "$APP/Contents/MacOS/"

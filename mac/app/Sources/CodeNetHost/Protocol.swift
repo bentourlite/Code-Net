@@ -125,6 +125,10 @@ struct ReceiverStatus: Decodable, Equatable {
         var playing: Bool
         var gap_ms: Double?
         var offset_ms: Double?
+        // Only in this Mac's own receiver status.
+        var rtt_ms: Double?
+        var address: String?
+        var last_timecode: String?
     }
 
     var name: String?

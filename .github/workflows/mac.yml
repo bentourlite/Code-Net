@@ -21,7 +21,6 @@ jobs:
       - name: Core tests
         run: cmake -S cpp/core -B build-core && cmake --build build-core --parallel && ctest --test-dir build-core --output-on-failure
       - name: App tests
-        working-directory: mac/app
         run: swift test
       - name: Load Developer ID certificates
         if: env.HAS_DEVELOPER_ID == 'true'

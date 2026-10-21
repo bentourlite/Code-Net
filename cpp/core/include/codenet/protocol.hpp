@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <string>
 
 #include "timecode.hpp"
 
@@ -15,11 +16,19 @@ constexpr uint16_t kPluginPort = 5262;
 constexpr const char* kMulticastGroup = "239.255.60.60";
 constexpr uint8_t kVersion = 1;
 
-enum class MessageType : uint8_t { Frame = 1, SyncRequest = 2, SyncResponse = 3, Status = 4 };
+enum class MessageType : uint8_t { Frame = 1, SyncRequest = 2, SyncResponse = 3, Status = 4, Assign = 5 };
 
 enum FrameFlags : uint8_t { kFlagNone = 0, kFlagPlaying = 1, kFlagSourceLost = 2 };
 
 using SourceId = std::array<uint8_t, 16>;
+
+inline bool isEmpty(const SourceId& id) { return id[0] == 0; }
+
+inline std::string sourceName(const SourceId& id) {
+    size_t n = 0;
+    while (n < id.size() && id[n] != 0) ++n;
+    return std::string(reinterpret_cast<const char*>(id.data()), n);
+}
 
 inline SourceId makeSourceId(const char* name) {
     SourceId id{};
@@ -76,5 +85,77 @@ inline bool decode(const uint8_t* data, size_t size, FramePacket& f) {
     f.frameStartNs = int64_t(wire::get64(data + 38));
     return f.timecode.frames < Timecode::framesPerDay(f.timecode.rate);
 }
+
+// The message type of a Code Net packet, or 0 if it isn't one.
+inline uint8_t messageType(const uint8_t* data, size_t size) {
+    if (size < 6 || std::memcmp(data, "CNET", 4) != 0 || data[4] != kVersion) return 0;
+    return data[5];
+}
+
+struct SyncRequest {
+    static constexpr size_t kSize = 34;
+    SourceId receiver{};
+    uint32_t sequence = 0;
+    int64_t t1 = 0;
+};
+
+struct SyncResponse {
+    static constexpr size_t kSize = 50;
+    SourceId host{};
+    uint32_t sequence = 0;
+    int64_t t1 = 0, t2 = 0, t3 = 0;
+};
+
+struct Assign {
+    static constexpr size_t kSize = 58;
+    SourceId receiver{};
+    SourceId main{};
+    SourceId backup{};  // all zero for none
+    uint32_t sequence = 0;
+};
+
+inline void putHeader(uint8_t* out, MessageType type) {
+    std::memcpy(out, "CNET", 4);
+    out[4] = kVersion;
+    out[5] = uint8_t(type);
+}
+
+inline void encode(const SyncRequest& r, uint8_t (&out)[SyncRequest::kSize]) {
+    putHeader(out, MessageType::SyncRequest);
+    std::memcpy(out + 6, r.receiver.data(), 16);
+    wire::put32(out + 22, r.sequence);
+    wire::put64(out + 26, uint64_t(r.t1));
+}
+
+inline bool decode(const uint8_t* data, size_t size, SyncResponse& r) {
+    if (size != SyncResponse::kSize || messageType(data, size) != uint8_t(MessageType::SyncResponse)) return false;
+    std::memcpy(r.host.data(), data + 6, 16);
+    r.sequence = wire::get32(data + 22);
+    r.t1 = int64_t(wire::get64(data + 26));
+    r.t2 = int64_t(wire::get64(data + 34));
+    r.t3 = int64_t(wire::get64(data + 42));
+    return true;
+}
+
+inline void encode(const Assign& a, uint8_t (&out)[Assign::kSize]) {
+    putHeader(out, MessageType::Assign);
+    std::memcpy(out + 6, a.receiver.data(), 16);
+    std::memcpy(out + 22, a.main.data(), 16);
+    std::memcpy(out + 38, a.backup.data(), 16);
+    wire::put32(out + 54, a.sequence);
+}
+
+inline bool decode(const uint8_t* data, size_t size, Assign& a) {
+    if (size != Assign::kSize || messageType(data, size) != uint8_t(MessageType::Assign)) return false;
+    std::memcpy(a.receiver.data(), data + 6, 16);
+    std::memcpy(a.main.data(), data + 22, 16);
+    std::memcpy(a.backup.data(), data + 38, 16);
+    a.sequence = wire::get32(data + 54);
+    return !isEmpty(a.main);
+}
+
+// Status report header; the JSON payload follows.
+constexpr size_t kStatusHeaderSize = 22;
+constexpr size_t kMaxStatusBytes = 1200;
 
 }  // namespace codenet
