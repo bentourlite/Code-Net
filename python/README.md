@@ -13,7 +13,7 @@ python3 -m venv .venv
 ```
 
 On the Pi, `sounddevice` needs PortAudio (`sudo apt install libportaudio2`) and
-`python-rtmidi` needs ALSA MIDI (`sudo apt install libasound2-dev`).
+`python-rtmidi` needs ALSA MIDI (`sudo apt install libasound2-dev`). On 32-bit Raspberry Pi OS, NumPy needs `libopenblas0`.
 
 ## Run a receiver
 

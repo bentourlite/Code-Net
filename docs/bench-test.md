@@ -27,9 +27,11 @@ cd code-net/python
 
 ## 2. Set up the Pi
 
+Run these one line at a time, not as a pasted block, so a failure is easy to spot.
+
 ```sh
 sudo apt update
-sudo apt install -y git python3-venv libportaudio2 libasound2-dev
+sudo apt install -y git python3-venv libportaudio2 libasound2-dev libopenblas0
 git clone -b phase-1-core https://github.com/bentourlite/code-net.git
 cd code-net/python
 python3 -m venv .venv
