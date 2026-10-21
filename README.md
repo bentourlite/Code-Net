@@ -15,6 +15,7 @@ See the design doc for the full architecture.
 | --- | --- |
 | `docs/protocol.md` | The wire protocol |
 | `python/` | Raspberry Pi receiver, shared protocol and LTC code, test sender |
+| `pi/` | Pi install script, systemd service and menu guide |
 
 Still to come: the Ableton plugin (AU and VST3) that decodes the LTC track, and the
 Mac menu-bar app with the node dashboard.

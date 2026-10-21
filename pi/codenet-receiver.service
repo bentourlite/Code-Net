@@ -1,0 +1,23 @@
+[Unit]
+Description=Code Net LTC receiver
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=@USER@
+Group=audio
+ExecStart=@VENV@/bin/codenet-receiver --config /etc/codenet/receiver.json --status-file /run/codenet/status.json
+RuntimeDirectory=codenet
+RuntimeDirectoryMode=0755
+Restart=always
+RestartSec=2
+# Timing matters more than anything else on this box.
+Nice=-10
+CPUSchedulingPolicy=fifo
+CPUSchedulingPriority=50
+LimitRTPRIO=95
+LimitMEMLOCK=infinity
+
+[Install]
+WantedBy=multi-user.target

@@ -49,4 +49,14 @@ codenet-sender --name mac-b --generate 01:00:00:00 --rate 25
 | `codenet/receiver/readback.py` | Output confirmation from a looped-back input |
 | `codenet/receiver/devices.py` | Soundcard and MIDI device adapters |
 | `codenet/receiver/service.py` | Network loop |
+| `codenet/receiver/settings.py` | Receiver settings file |
+| `codenet/receiver/status.py` | Live status file for the monitor |
+| `codenet/pi/menu.py` | `codenet-menu`, the SSH set-up and monitor menu |
+| `codenet/pi/network.py` | IP settings through NetworkManager |
 | `codenet/sender.py` | Test host |
+
+## On the Pi
+
+For a permanent receiver, use `pi/install.sh` and the `codenet-menu` SSH menu instead
+of running `codenet-receiver` by hand; see `pi/README.md`. The receiver reads
+`/etc/codenet/receiver.json` when it exists, and any command-line option overrides it.

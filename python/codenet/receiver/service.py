@@ -28,6 +28,7 @@ class ReceiverService:
         self._last_frame_rx: dict[bytes, int] = {}
         self._max_gap_ns: dict[bytes, int] = {}
         self._ignored: set[bytes] = set()
+        self.other_hosts: dict[str, str] = {}  # hosts heard that are not main or backup
         self._seq = 0
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -105,6 +106,8 @@ class ReceiverService:
                     log.warning("ignoring frames from host %s at %s: not this receiver's main or backup",
                                 source_name(msg.source), host)
                     self._ignored.add(msg.source)
+                if msg.source not in self.receiver.sources:
+                    self.other_hosts[source_name(msg.source)] = host
                 if msg.source in self.receiver.sources and self.host_addresses.get(msg.source) != host:
                     log.info("host %s is at %s", source_name(msg.source), host)
                     self.host_addresses[msg.source] = host
