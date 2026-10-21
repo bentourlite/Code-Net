@@ -53,11 +53,15 @@ class SoundcardOutput:
         self.renderer = renderer
         self.readback = readback
         self.dac = DacClock(sample_rate)
-        self.output = sd.OutputStream(device=device, samplerate=sample_rate, channels=1, dtype="float32",
+        # Many USB codecs only accept stereo on their hardware device, so open every
+        # output channel (up to two) and put the same LTC on each.
+        out_channels = max(1, min(2, sd.query_devices(device, "output")["max_output_channels"]))
+        self.output = sd.OutputStream(device=device, samplerate=sample_rate, channels=out_channels, dtype="float32",
                                       blocksize=blocksize, latency="low", callback=self._play)
         self.input = None
         if readback is not None:
-            self.input = sd.InputStream(device=readback_device, samplerate=sample_rate, channels=1,
+            in_channels = max(1, min(2, sd.query_devices(readback_device, "input")["max_input_channels"]))
+            self.input = sd.InputStream(device=readback_device, samplerate=sample_rate, channels=in_channels,
                                         dtype="float32", blocksize=256, latency="low", callback=self._capture)
 
     @staticmethod
@@ -68,7 +72,7 @@ class SoundcardOutput:
         if status.output_underflow:
             log.warning("audio output underflow")
         start = self.dac.block_start(self._to_local(time_info.outputBufferDacTime, time_info.currentTime), frames)
-        outdata[:, 0] = self.renderer.render(start, frames)
+        outdata[:] = self.renderer.render(start, frames)[:, None]
 
     def _capture(self, indata, frames, time_info, status):
         start = self._to_local(time_info.inputBufferAdcTime, time_info.currentTime)
