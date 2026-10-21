@@ -50,4 +50,4 @@ RC
 fi
 
 echo
-echo "Done. Run 'codenet-menu' to set up the receiver, then start it from 'Start, stop and logs'."
+echo "Done. Run 'codenet-menu' to set up the receiver, then choose 'Start receiver'."

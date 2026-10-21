@@ -347,6 +347,25 @@ def devices_screen() -> None:
     pause()
 
 
+def start_receiver(config_path: Path, status_path: Path) -> None:
+    """Start (or restart) the service, after checking the settings are usable."""
+    problems = settings_mod.load(config_path).validate()
+    if problems:
+        print("\nThe receiver can't start yet: " + "; ".join(problems) + ".")
+        if ask_yes("Set it up now", True):
+            if not edit_settings(config_path, status_path):
+                return
+        else:
+            return
+    run(["sudo", "systemctl", "restart", SERVICE])
+    if ask_yes("Also start it automatically at boot", True):
+        run(["sudo", "systemctl", "enable", SERVICE])
+    if ask_yes("Open the live monitor", True):
+        monitor(status_path)
+    else:
+        pause()
+
+
 # ---- main menu --------------------------------------------------------------
 
 def main(argv=None) -> None:
@@ -368,13 +387,19 @@ def main(argv=None) -> None:
             print(f"  {s.name}: main {s.main or 'not set'}, backup {s.backup or 'none'}, "
                   f"{s.output} {s.device or s.midi_port or ''}".rstrip())
             print(f"  Output {out}    Service {service_state() or 'n/a'}\n")
-            key = choose("", [("monitor", "Live monitor"), ("settings", "Receiver settings"),
-                              ("network", "Network and IP addresses"), ("service", "Start, stop and logs"),
+            key = choose("", [("start", "Start receiver (or restart it)"), ("stop", "Stop receiver"),
+                              ("monitor", "Live monitor"), ("settings", "Receiver settings"),
+                              ("network", "Network and IP addresses"), ("service", "Service: start at boot, logs"),
                               ("devices", "List audio and MIDI devices"),
                               ("main", "Return to main host now"), ("quit", "Quit")])
             if key == "quit":
                 return
-            if key == "monitor":
+            if key == "start":
+                start_receiver(args.config, args.status_file)
+            elif key == "stop":
+                run(["sudo", "systemctl", "stop", SERVICE])
+                pause()
+            elif key == "monitor":
                 monitor(args.status_file)
             elif key == "settings":
                 edit_settings(args.config, args.status_file)
