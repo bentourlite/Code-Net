@@ -53,6 +53,23 @@ final class ProtocolTests: XCTestCase {
         XCTAssertNil(status.readback)
     }
 
+    func testAssignMatchesPython() {
+        XCTAssertEqual(hex(Assign(receiver: "pi-1", main: "mac-a", backup: nil, sequence: 9).encode()),
+                       "434e4554010570692d310000000000000000000000006d61632d6100000000000000000000000000000000000000000000000000000000000009")
+        XCTAssertEqual(hex(Assign(receiver: "pi-1", main: "mac-a", backup: "mac-b", sequence: 10).encode()),
+                       "434e4554010570692d310000000000000000000000006d61632d6100000000000000000000006d61632d6200000000000000000000000000000a")
+    }
+
+    func testStatusWithAssignmentDecodes() throws {
+        let json = #"{"name":"pi-1","main":"mac-a","backup":null,"heard":["mac-b"],"sources":[]}"#
+        var data = Data(unhex("434e45540104") + CodeNet.sourceId("pi-1"))
+        data.append(Data(json.utf8))
+        let (_, status) = try XCTUnwrap(ReceiverStatus.decode(data))
+        XCTAssertEqual(status.main, "mac-a")
+        XCTAssertNil(status.backup)
+        XCTAssertEqual(status.heard, ["mac-b"])
+    }
+
     private func hex(_ d: Data) -> String { d.map { String(format: "%02x", $0) }.joined() }
 
     private func unhex(_ s: String) -> [UInt8] {

@@ -8,7 +8,7 @@ import socket
 import threading
 import time
 
-from ..protocol import (SYNC_PORT, FramePacket, ProtocolError, StatusReport, SyncRequest, SyncResponse, decode,
+from ..protocol import (SYNC_PORT, Assign, FramePacket, ProtocolError, StatusReport, SyncRequest, SyncResponse, decode,
                         source_name)
 from .core import Receiver
 
@@ -32,6 +32,9 @@ class ReceiverService:
         self.other_hosts: dict[str, str] = {}  # hosts heard in the last 10 s that are not main or backup
         self._other_heard_ns: dict[str, int] = {}
         self._seq = 0
+        self._last_assign: tuple[str, int] | None = None
+        # Called (outside the lock) with (main, backup) names after a host app reassigns this receiver.
+        self.on_assign = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -49,6 +52,8 @@ class ReceiverService:
     def describe_idle(self, now_ns: int) -> str:
         """Why nothing is being output, for the status line."""
         with self.lock:
+            if not self.receiver.sources:
+                return "no main host assigned yet; pick one for this receiver in the Code Net app on a Mac"
             if self.packets_received == 0:
                 return "no Code Net packets received yet; check the sender, its --to address and the network"
             reasons = []
@@ -122,6 +127,34 @@ class ReceiverService:
                 self.receiver.on_frame(msg, t4)
             elif isinstance(msg, SyncResponse):
                 self.receiver.on_sync(msg.host, msg.t1, msg.t2, msg.t3, t4)
+        if isinstance(msg, Assign) and msg.receiver == self.receiver_id:
+            self._assign(msg, host, t4)
+
+    def _assign(self, msg: Assign, host: str, now_ns: int) -> None:
+        if self._last_assign == (host, msg.sequence):
+            return  # the host app repeats each assignment until it sees it in our status
+        self._last_assign = (host, msg.sequence)
+        if msg.backup == msg.main:
+            log.warning("ignored assignment from %s: main and backup are the same host", host)
+            return
+        main, backup = source_name(msg.main), source_name(msg.backup) if msg.backup else ""
+        with self.lock:
+            current = (self.receiver.config.main, self.receiver.config.backup)
+            if current == (msg.main, msg.backup):
+                return
+            self.receiver.set_sources(msg.main, msg.backup, now_ns)
+            for source in list(self.host_addresses):
+                if source not in self.receiver.sources:
+                    self.other_hosts[source_name(source)] = self.host_addresses.pop(source)
+                    self._other_heard_ns[source_name(source)] = now_ns
+            for source in self.receiver.sources:
+                name = source_name(source)
+                if source not in self.host_addresses and name in self.other_hosts:
+                    self.host_addresses[source] = self.other_hosts.pop(name)
+                    self._other_heard_ns.pop(name, None)
+        log.warning("host at %s assigned main=%s backup=%s", host, main, backup or "-")
+        if self.on_assign is not None:
+            self.on_assign(main, backup)
 
     def send_status(self, payload: bytes) -> None:
         """Report this receiver's status to every host it has heard from."""

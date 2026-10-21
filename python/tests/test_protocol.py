@@ -45,3 +45,13 @@ def test_status_report_round_trip():
     assert decode(rep.encode()) == rep
     with pytest.raises(ValueError):
         StatusReport(source_id("pi-1"), b"x" * 2000).encode()
+
+
+def test_assign_round_trip():
+    from codenet.protocol import Assign
+
+    a = Assign(source_id("pi-1"), source_id("mac-a"), None, 9)
+    assert decode(a.encode()) == a
+    b = Assign(source_id("pi-1"), source_id("mac-a"), source_id("mac-b"), 10)
+    assert decode(b.encode()) == b
+    assert len(b.encode()) == 58

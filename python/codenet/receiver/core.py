@@ -56,7 +56,7 @@ class Switch:
 
 @dataclass
 class ReceiverConfig:
-    main: bytes
+    main: bytes | None  # None until a host app assigns one
     backup: bytes | None = None
     # A source is lost after this many frame periods without a packet. Keep this no
     # larger than max_predict_frames so failover lands before the prediction runs out.
@@ -76,7 +76,9 @@ class ReceiverConfig:
 class Receiver:
     def __init__(self, config: ReceiverConfig):
         self.config = config
-        self.sources: dict[bytes, SourceState] = {config.main: SourceState(config.main, Role.MAIN)}
+        self.sources: dict[bytes, SourceState] = {}
+        if config.main is not None:
+            self.sources[config.main] = SourceState(config.main, Role.MAIN)
         if config.backup is not None:
             self.sources[config.backup] = SourceState(config.backup, Role.BACKUP)
         self.active: SourceState | None = None
@@ -104,6 +106,23 @@ class Receiver:
         if state is not None:
             state.clock.add(t1, t2, t3, t4)
 
+    def set_sources(self, main: bytes | None, backup: bytes | None, now_ns: int) -> None:
+        """Change the main and backup hosts. A host that stays keeps its clock sync and state."""
+        old = self.sources
+        self.config.main, self.config.backup = main, backup
+        self.sources = {}
+        for source, role in ((main, Role.MAIN), (backup, Role.BACKUP)):
+            if source is None:
+                continue
+            state = old.get(source) or SourceState(source, role)
+            state.role = role
+            self.sources[source] = state
+        if self.active is not None and self.active.source not in self.sources:
+            self.switches.append(Switch(now_ns, self.active.role, None, "host unassigned"))
+            self.active = None
+        self._return_requested = True  # follow the newly chosen main straight away if it is valid
+        self.update(now_ns)
+
     def request_return_to_main(self) -> None:
         self._return_requested = True
 
@@ -123,7 +142,7 @@ class Receiver:
         return now_ns - state.last_rx_ns < timeout
 
     def update(self, now_ns: int) -> None:
-        main = self.sources[self.config.main]
+        main = self.sources.get(self.config.main) if self.config.main is not None else None
         backup = self.sources.get(self.config.backup) if self.config.backup is not None else None
         for state in self.sources.values():
             if self.is_valid(state, now_ns):
@@ -132,7 +151,7 @@ class Receiver:
             else:
                 state.valid_since_ns = None
 
-        main_ok = main.valid_since_ns is not None
+        main_ok = main is not None and main.valid_since_ns is not None
         backup_ok = backup is not None and backup.valid_since_ns is not None
         current = self.active
 

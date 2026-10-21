@@ -48,6 +48,9 @@ final class Engine: ObservableObject {
     @Published private(set) var framesSent: UInt64 = 0
     @Published private(set) var receivers: [ReceiverEntry] = []
     @Published private(set) var problems: [String] = []
+    /// Receivers with an assignment on its way, and ones that didn't confirm one.
+    @Published private(set) var assigning: Set<String> = []
+    @Published private(set) var assignFailed: Set<String> = []
     @Published var settings: HostSettings {
         didSet {
             settings.save()
@@ -73,6 +76,9 @@ final class Engine: ObservableObject {
     private var receiverTable: [String: ReceiverEntry] = [:]
     private var sendError: String?
     private var setupErrors: [String] = []
+    private var pendingAssigns: [String: (assign: Assign, address: String, deadline: Int64)] = [:]
+    private var failedAssigns: Set<String> = []
+    private var assignSequence = UInt32(truncatingIfNeeded: Int(Date().timeIntervalSince1970))
 
     static let pluginAliveNs: Int64 = 500_000_000
 
@@ -170,9 +176,40 @@ final class Engine: ObservableObject {
         }
     }
 
+    // MARK: assignments
+
+    /// Sets a receiver's main and backup hosts. Repeated until its status report shows it.
+    func assign(receiver: String, main: String, backup: String?) {
+        queue.async {
+            guard let entry = self.receiverTable[receiver], !main.isEmpty, main != backup else { return }
+            self.assignSequence &+= 1
+            let assign = Assign(receiver: receiver, main: main, backup: backup?.isEmpty == true ? nil : backup,
+                                sequence: self.assignSequence)
+            self.pendingAssigns[receiver] = (assign, entry.address, CodeNet.nowNs() + 5_000_000_000)
+            self.failedAssigns.remove(receiver)
+            self.sendPendingAssigns()
+        }
+    }
+
+    private func sendPendingAssigns() {
+        let now = CodeNet.nowNs()
+        for (id, pending) in pendingAssigns {
+            let status = receiverTable[id]?.status
+            if status?.main == pending.assign.main && status?.backup == pending.assign.backup {
+                pendingAssigns[id] = nil
+            } else if now > pending.deadline {
+                pendingAssigns[id] = nil
+                failedAssigns.insert(id)
+            } else {
+                sendSocket?.send(pending.assign.encode(), to: pending.address, port: CodeNet.framePort)
+            }
+        }
+    }
+
     // MARK: UI
 
     private func publish() {
+        sendPendingAssigns()
         let now = CodeNet.nowNs()
         let state: PluginState
         if lastPluginPacketNs == 0 { state = .notSeen }
@@ -189,6 +226,7 @@ final class Engine: ObservableObject {
         }
         let tc = last.rate == 0 || lastPluginPacketNs == 0 ? "--:--:--:--" : last.timecode
         let snapshot = (tc, last.rate, state, sent, list, problems)
+        let assigning = Set(pendingAssigns.keys), assignFailed = failedAssigns
         DispatchQueue.main.async {
             self.timecode = snapshot.0
             self.rate = snapshot.1
@@ -196,6 +234,8 @@ final class Engine: ObservableObject {
             self.framesSent = snapshot.3
             if self.receivers != snapshot.4 { self.receivers = snapshot.4 }
             if self.problems != snapshot.5 { self.problems = snapshot.5 }
+            if self.assigning != assigning { self.assigning = assigning }
+            if self.assignFailed != assignFailed { self.assignFailed = assignFailed }
         }
     }
 }

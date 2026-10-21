@@ -68,6 +68,9 @@ def compact(snap: dict) -> dict:
     rb = snap.get("readback")
     return {
         "name": snap.get("name"),
+        "main": snap.get("main"),
+        "backup": snap.get("backup"),
+        "heard": sorted(snap.get("other_hosts") or {}),
         "following": snap.get("following"),
         "output": snap.get("output"),
         "rate": snap.get("rate"),

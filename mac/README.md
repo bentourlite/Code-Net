@@ -33,6 +33,11 @@ download the build from GitHub Actions instead, run `xattr -cr` on each item bef
    with the plugin's mute switch; the plugin reads the audio before muting it).
 4. Press play. The plugin and the app both show the running timecode, and receivers start.
 
+Each receiver in the list has **Main** and **Backup** menus. Choosing a host there tells that
+Pi to follow it and saves it on the Pi, so a Pi only needs its name, output and network set
+locally. A new Pi with no main set shows up as soon as it hears any Code Net Mac; a spinner shows
+until the Pi confirms the change.
+
 The latency trim shifts every frame stamp. Leave it at 0 unless a readback measurement shows
 an offset.
 

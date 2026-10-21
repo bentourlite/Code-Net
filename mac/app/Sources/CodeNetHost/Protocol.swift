@@ -8,7 +8,7 @@ enum CodeNet {
     static let multicastGroup = "239.255.60.60"
     static let version: UInt8 = 1
 
-    enum MessageType: UInt8 { case frame = 1, syncRequest = 2, syncResponse = 3, status = 4 }
+    enum MessageType: UInt8 { case frame = 1, syncRequest = 2, syncResponse = 3, status = 4, assign = 5 }
 
     static let flagPlaying: UInt8 = 1
     static let flagSourceLost: UInt8 = 2
@@ -128,6 +128,9 @@ struct ReceiverStatus: Decodable, Equatable {
     }
 
     var name: String?
+    var main: String?
+    var backup: String?
+    var heard: [String]?
     var following: String?
     var output: String?
     var rate: Int?
@@ -144,6 +147,26 @@ struct ReceiverStatus: Decodable, Equatable {
         let id = CodeNet.sourceName(Array(b[6..<22]))
         guard let status = try? JSONDecoder().decode(ReceiverStatus.self, from: Data(b[22...])) else { return nil }
         return (id, status)
+    }
+}
+
+/// Sets a receiver's main and backup hosts; sent to the receiver's frame port.
+struct Assign: Equatable {
+    var receiver: String
+    var main: String
+    var backup: String?
+    var sequence: UInt32
+
+    func encode() -> Data {
+        var d = Data(capacity: 58)
+        d.append(contentsOf: Array("CNET".utf8))
+        d.append(CodeNet.version)
+        d.append(CodeNet.MessageType.assign.rawValue)
+        d.append(contentsOf: CodeNet.sourceId(receiver))
+        d.append(contentsOf: CodeNet.sourceId(main))
+        d.append(contentsOf: CodeNet.sourceId(backup ?? ""))
+        d.appendBE(sequence)
+        return d
     }
 }
 

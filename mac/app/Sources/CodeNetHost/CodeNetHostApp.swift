@@ -87,9 +87,21 @@ struct DashboardView: View {
                     .font(.callout).foregroundStyle(.secondary)
             }
             ForEach(engine.receivers) { r in
-                ReceiverRow(entry: r, hostName: engine.settings.hostName)
+                ReceiverRow(entry: r, hostName: engine.settings.hostName, hostChoices: hostChoices,
+                            assigning: engine.assigning.contains(r.id), assignFailed: engine.assignFailed.contains(r.id),
+                            onAssign: { main, backup in engine.assign(receiver: r.id, main: main, backup: backup) })
             }
         }
+    }
+
+    /// Every host name this Mac knows of: itself and whatever the receivers hear.
+    private var hostChoices: [String] {
+        var names: Set<String> = [engine.settings.hostName]
+        for r in engine.receivers {
+            names.formUnion(r.status.heard ?? [])
+            names.formUnion((r.status.sources ?? []).map(\.name))
+        }
+        return names.filter { !$0.isEmpty }.sorted()
     }
 
     private var settingsSection: some View {
@@ -142,6 +154,58 @@ struct DashboardView: View {
 struct ReceiverRow: View {
     let entry: ReceiverEntry
     let hostName: String
+    let hostChoices: [String]
+    let assigning: Bool
+    let assignFailed: Bool
+    let onAssign: (String, String?) -> Void
+
+    private var currentMain: String {
+        entry.status.main ?? entry.status.sources?.first { $0.role == "main" }?.name ?? ""
+    }
+
+    private var currentBackup: String {
+        entry.status.backup ?? entry.status.sources?.first { $0.role == "backup" }?.name ?? ""
+    }
+
+    private var assignment: some View {
+        HStack(spacing: 8) {
+            Picker("Main", selection: Binding(
+                get: { currentMain },
+                set: { main in onAssign(main, main == currentBackup ? orNil(currentMain) : orNil(currentBackup)) }
+            )) {
+                ForEach(choices(including: currentMain), id: \.self) { Text($0).tag($0) }
+            }
+            .frame(width: 180)
+            Picker("Backup", selection: Binding(
+                get: { currentBackup },
+                set: { backup in
+                    if backup == currentMain { return }
+                    onAssign(currentMain, backup.isEmpty ? nil : backup)
+                }
+            )) {
+                Text("None").tag("")
+                ForEach(choices(including: currentBackup).filter { !$0.isEmpty && $0 != currentMain }, id: \.self) {
+                    Text($0).tag($0)
+                }
+            }
+            .frame(width: 190)
+            if assigning {
+                ProgressView().controlSize(.small)
+            } else if assignFailed {
+                Text("not confirmed").font(.caption).foregroundStyle(.orange)
+            }
+        }
+        .font(.caption)
+        .disabled(stale)
+    }
+
+    private func orNil(_ name: String) -> String? { name.isEmpty ? nil : name }
+
+    private func choices(including current: String) -> [String] {
+        var names = hostChoices
+        if !current.isEmpty && !names.contains(current) { names.append(current) }
+        return names
+    }
 
     private var stale: Bool { Date().timeIntervalSince(entry.lastSeen) > 3 }
 
@@ -162,6 +226,7 @@ struct ReceiverRow: View {
                 }
                 Text(detail(s)).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                assignment
             }
         }
         .opacity(stale ? 0.5 : 1)

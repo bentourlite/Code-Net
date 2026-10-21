@@ -75,7 +75,23 @@ Each receiver sends one a second to every host it has heard from, so the host ap
 can list receivers without a separate discovery step. Fields: `name`, `following`
 (`main`, `backup` or null), `output` (timecode or null), `rate`, `idle` (why output is
 stopped), `device`, `readback` (`state`, `offset_ms`), `wifi`, `uptime_s`, and
-`sources` (per host: `name`, `role`, `valid`, `playing`, `gap_ms`, `offset_ms`).
+`sources` (per host: `name`, `role`, `valid`, `playing`, `gap_ms`, `offset_ms`),
+`main` and `backup` (the assigned host names), and `heard` (other hosts it receives).
+
+## Assign (type 5, 58 bytes)
+
+| Offset | Size | Field |
+| --- | --- | --- |
+| 6 | 16 | Receiver id (only that receiver acts on it) |
+| 22 | 16 | Main host id |
+| 38 | 16 | Backup host id, all zero for none |
+| 54 | 4 | Sequence |
+
+Sent by a host app to a receiver's address on the frame port to set its main and backup.
+The receiver applies it at once (a host that stays keeps its clock sync; if the new main
+is valid it is followed straight away), saves it to its settings file, and shows it in its
+next status report. The app repeats the packet every 200 ms until the report matches;
+the receiver ignores repeats of the same sequence.
 
 ## Plugin to host app (localhost)
 
