@@ -22,6 +22,9 @@ mac/build.sh --install
 This puts the plugin in `~/Library/Audio/Plug-Ins` and the app in `/Applications`. If you
 download the build from GitHub Actions instead, run `xattr -cr` on each item before opening.
 
+To remove everything (app, plugin, settings and the Audio Unit cache) before reinstalling,
+quit Ableton and run `mac/uninstall.sh`.
+
 ## Use
 
 1. Open **Code Net** from Applications. An antenna icon appears in the menu bar (it shows radio waves while timecode is playing); allow Local
