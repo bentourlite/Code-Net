@@ -29,6 +29,7 @@ struct RxServiceConfig {
 class RxService {
 public:
     using AssignCallback = std::function<void(const std::string& main, const std::string& backup)>;
+    using AdvanceCallback = std::function<void(double advanceMs)>;
 
     RxService(RxServiceConfig config, ReceiverConfig receiverConfig);
     ~RxService();
@@ -44,6 +45,11 @@ public:
     void returnToMain();
     void setDevice(const std::string& device);
     void setAssignCallback(AssignCallback cb);
+    // Output advance in ms (positive = earlier), set here or by a host app's Calibrate.
+    void setAdvance(double ms);
+    double advanceMs() const;
+    // Called on the network thread when a host app sets the advance.
+    void setAdvanceCallback(AdvanceCallback cb);
 
     // The latest status as JSON (the same object sent to hosts, plus a few local fields).
     std::string statusJson() const;
@@ -77,6 +83,10 @@ private:
     std::string device_ = "none";
     std::string status_ = "{}";
     AssignCallback onAssign_;
+    AdvanceCallback onAdvance_;
+    std::optional<std::pair<std::string, uint32_t>> lastCalibrate_;
+    std::optional<uint32_t> calibrateSeq_;
+    std::string calibrateState_, calibrateMessage_;
 
     // Seqlock around the schedule copy read by the audio and MIDI threads.
     mutable std::atomic<uint32_t> scheduleSeq_{0};

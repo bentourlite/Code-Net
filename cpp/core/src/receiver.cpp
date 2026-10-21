@@ -1,5 +1,7 @@
 #include "codenet/receiver.hpp"
 
+#include <algorithm>
+
 namespace codenet {
 
 const char* roleName(Role role) { return role == Role::Main ? "main" : "backup"; }
@@ -11,7 +13,10 @@ std::optional<ScheduledFrame> Schedule::frameAt(int64_t localNs) const {
     const int64_t elapsed = localNs - start;
     if (elapsed < 0) return std::nullopt;
     const int64_t k = elapsed * rate / kNsPerSecond;
-    if (k > maxPredictFrames) return std::nullopt;
+    // The window widens by the advance, so a device with a long delay keeps the same
+    // tolerance to late packets.
+    const int64_t advanceFrames = (std::max<int64_t>(outputAdvanceNs, 0) * rate + kNsPerSecond - 1) / kNsPerSecond;
+    if (k > maxPredictFrames + advanceFrames) return std::nullopt;
     return ScheduledFrame{anchor.next(uint32_t(k)), userBits, start + frameOffsetNs(k, rate)};
 }
 

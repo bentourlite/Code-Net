@@ -49,7 +49,7 @@ struct ReceiverSettings: Equatable {
     }
 
     /// The settings that need the network side restarting when they change.
-    var networkKey: String { "\(name)|\(multicast)|\(wifi)|\(advanceMs)" }
+    var networkKey: String { "\(name)|\(multicast)|\(wifi)" }
     var outputKey: String { "\(outputKind.rawValue)|\(deviceId)|\(channel)" }
 }
 
@@ -149,6 +149,11 @@ final class ReceiverEngine: ObservableObject {
                 let m = String(cString: main), b = String(cString: backup)
                 DispatchQueue.main.async { engine.assigned(main: m, backup: b) }
             }, Unmanaged.passUnretained(self).toOpaque())
+            cn_receiver_set_advance_callback(h, { context, ms in
+                guard let context else { return }
+                let engine = Unmanaged<ReceiverEngine>.fromOpaque(context).takeUnretainedValue()
+                DispatchQueue.main.async { engine.settings.advanceMs = ms }
+            }, Unmanaged.passUnretained(self).toOpaque())
         }
         guard let h = handle else { return }
         if appliedSources != (s.main, s.backup) {
@@ -168,11 +173,20 @@ final class ReceiverEngine: ObservableObject {
             }
         }
         cn_receiver_set_level(h, s.level)
+        cn_receiver_set_advance(h, s.advanceMs)
+    }
+
+    /// The timecode on the output right now, for a display that counts every frame.
+    func timecodeNow() -> String? {
+        guard let h = handle else { return nil }
+        var buffer = [CChar](repeating: 0, count: 16)
+        return cn_receiver_timecode_now(h, &buffer, Int32(buffer.count)) > 0 ? String(cString: buffer) : nil
     }
 
     private func stop() {
         if let h = handle {
             cn_receiver_set_assign_callback(h, nil, nil)
+            cn_receiver_set_advance_callback(h, nil, nil)
             cn_receiver_destroy(h)
         }
         handle = nil

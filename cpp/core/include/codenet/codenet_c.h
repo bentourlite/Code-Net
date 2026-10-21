@@ -34,6 +34,17 @@ void cn_receiver_return_to_main(cn_receiver* receiver);
 typedef void (*cn_assign_callback)(void* context, const char* main, const char* backup);
 void cn_receiver_set_assign_callback(cn_receiver* receiver, cn_assign_callback callback, void* context);
 
+/* Output advance in ms (positive = earlier), to cancel the output device's delay. */
+void cn_receiver_set_advance(cn_receiver* receiver, double advance_ms);
+
+/* Called on the network thread when a host app sets the advance (Calibrate). */
+typedef void (*cn_advance_callback)(void* context, double advance_ms);
+void cn_receiver_set_advance_callback(cn_receiver* receiver, cn_advance_callback callback, void* context);
+
+/* Copies the timecode on the output right now ("HH:MM:SS:FF") into `buffer`;
+   returns 0, with an empty string, while the output is silent. */
+int cn_receiver_timecode_now(cn_receiver* receiver, char* buffer, int size);
+
 /* Copies the latest status JSON into `buffer`; returns its full length. */
 int cn_receiver_status(cn_receiver* receiver, char* buffer, int size);
 

@@ -24,6 +24,38 @@ final class ProtocolTests: XCTestCase {
         XCTAssertTrue(p.playing)
     }
 
+    func testAnchorCountsFramesBetweenPackets() {
+        var a = TimecodeAnchor(frames: 90000, rate: 25, frameStartNs: 1_000_000_000, playing: true)
+        XCTAssertEqual(a.timecode(at: 1_000_000_000), "01:00:00:00")
+        XCTAssertEqual(a.timecode(at: 1_039_999_999), "01:00:00:00")
+        XCTAssertEqual(a.timecode(at: 1_040_000_000), "01:00:00:01")
+        XCTAssertEqual(a.timecode(at: 1_120_000_000), "01:00:00:03")
+        XCTAssertEqual(a.timecode(at: 0), "01:00:00:00")
+        XCTAssertEqual(a.timecode(at: 9_000_000_000), "01:00:00:06")  // runs on for at most 1/4 s
+        a.playing = false
+        XCTAssertEqual(a.timecode(at: 1_120_000_000), "01:00:00:00")
+        a = TimecodeAnchor(frames: 25 * 86_400 - 1, rate: 25, frameStartNs: 0, playing: true)
+        XCTAssertEqual(a.timecode(at: 40_000_000), "00:00:00:00")
+        XCTAssertEqual(TimecodeAnchor().timecode(at: 0), "--:--:--:--")
+    }
+
+    func testCalibrateMatchesPython() {
+        let c = Calibrate(receiver: "mac-rx", mode: .set, valueUs: -1500, sequence: 3)
+        XCTAssertEqual(hex(c.encode()), "434e455401066d61632d72780000000000000000000001fffffa2400000003")
+    }
+
+    func testReceiverAnchorRunsOnFromItsReport() throws {
+        XCTAssertEqual(TimecodeAnchor.parse("01:00:00:05", rate: 25), 90005)
+        var e = ReceiverEntry(id: "pi-1", address: "10.0.0.2", status: try JSONDecoder().decode(
+            ReceiverStatus.self, from: Data(#"{"output":"01:00:00:05","rate":25,"advance_ms":1.5}"#.utf8)),
+                              lastSeen: Date(), heardNs: 1_000_000_000)
+        let a = try XCTUnwrap(e.outputAnchor)
+        XCTAssertEqual(a.timecode(at: 1_400_000_000), "01:00:00:15")
+        XCTAssertEqual(a.timecode(at: 9_000_000_000), "01:00:01:17")  // stops 1.5 s on
+        e.status.output = nil
+        XCTAssertNil(e.outputAnchor)
+    }
+
     func testFrameDecodeRejectsBadPackets() {
         var bytes = unhex(pythonFrame)
         XCTAssertNil(FramePacket.decode(Data(bytes.dropLast())))

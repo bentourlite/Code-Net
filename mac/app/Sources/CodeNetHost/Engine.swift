@@ -31,6 +31,16 @@ struct ReceiverEntry: Identifiable, Equatable {
     var address: String
     var status: ReceiverStatus
     var lastSeen: Date
+    var heardNs: Int64 = 0  // host clock when the report arrived
+
+    /// The receiver's output timecode, run on from its last report so the display counts
+    /// every frame rather than jumping once a second.
+    var outputAnchor: TimecodeAnchor? {
+        guard let output = status.output, let rate = status.rate, let frames = TimecodeAnchor.parse(output, rate: rate)
+        else { return nil }
+        return TimecodeAnchor(frames: frames, rate: UInt8(rate), frameStartNs: heardNs, playing: true,
+                              maxRunOnFrames: Int64(rate) * 3 / 2)
+    }
 }
 
 enum PluginState: String {
@@ -42,7 +52,7 @@ enum PluginState: String {
 
 final class Engine: ObservableObject {
     // Published to the UI on the main queue.
-    @Published private(set) var timecode = "--:--:--:--"
+    @Published private(set) var anchor = TimecodeAnchor()
     @Published private(set) var rate: UInt8 = 0
     @Published private(set) var pluginState = PluginState.notSeen
     @Published private(set) var framesSent: UInt64 = 0
@@ -51,6 +61,9 @@ final class Engine: ObservableObject {
     /// Receivers with an assignment on its way, and ones that didn't confirm one.
     @Published private(set) var assigning: Set<String> = []
     @Published private(set) var assignFailed: Set<String> = []
+    /// Receivers with a calibration request on its way, and ones that didn't take one.
+    @Published private(set) var calibrating: Set<String> = []
+    @Published private(set) var calibrateFailed: Set<String> = []
     @Published var settings: HostSettings {
         didSet {
             settings.save()
@@ -78,6 +91,8 @@ final class Engine: ObservableObject {
     private var setupErrors: [String] = []
     private var pendingAssigns: [String: (assign: Assign, address: String, deadline: Int64)] = [:]
     private var failedAssigns: Set<String> = []
+    private var pendingCalibrations: [String: (calibrate: Calibrate, address: String, deadline: Int64)] = [:]
+    private var failedCalibrations: Set<String> = []
     private var assignSequence = UInt32(truncatingIfNeeded: Int(Date().timeIntervalSince1970))
 
     static let pluginAliveNs: Int64 = 500_000_000
@@ -118,7 +133,7 @@ final class Engine: ObservableObject {
         heartbeat = hb
 
         let ui = DispatchSource.makeTimerSource(queue: queue)
-        ui.schedule(deadline: .now(), repeating: .milliseconds(200))
+        ui.schedule(deadline: .now(), repeating: .milliseconds(100))
         ui.setEventHandler { [weak self] in self?.publish() }
         ui.resume()
         uiTimer = ui
@@ -172,7 +187,7 @@ final class Engine: ObservableObject {
             syncSocket?.send(reply, to: host, port: port)
         } else if let report = ReceiverStatus.decode(data) {
             receiverTable[report.id] = ReceiverEntry(id: report.id, address: host, status: report.status,
-                                                     lastSeen: Date())
+                                                     lastSeen: Date(), heardNs: t2)
         }
     }
 
@@ -191,8 +206,33 @@ final class Engine: ObservableObject {
         }
     }
 
+    /// Times a receiver's output through its readback loop and sets its advance to match,
+    /// or (with `advanceMs`) sets the advance by hand. Repeated until its status shows it.
+    func calibrate(receiver: String, advanceMs: Double? = nil) {
+        queue.async {
+            guard let entry = self.receiverTable[receiver] else { return }
+            self.assignSequence &+= 1
+            let calibrate = Calibrate(receiver: receiver, mode: advanceMs == nil ? .measure : .set,
+                                      valueUs: Int32(clamping: Int((advanceMs ?? 0) * 1000)),
+                                      sequence: self.assignSequence)
+            self.pendingCalibrations[receiver] = (calibrate, entry.address, CodeNet.nowNs() + 5_000_000_000)
+            self.failedCalibrations.remove(receiver)
+            self.sendPendingAssigns()
+        }
+    }
+
     private func sendPendingAssigns() {
         let now = CodeNet.nowNs()
+        for (id, pending) in pendingCalibrations {
+            if receiverTable[id]?.status.calibration?.seq == pending.calibrate.sequence {
+                pendingCalibrations[id] = nil
+            } else if now > pending.deadline {
+                pendingCalibrations[id] = nil
+                failedCalibrations.insert(id)
+            } else {
+                sendSocket?.send(pending.calibrate.encode(), to: pending.address, port: CodeNet.framePort)
+            }
+        }
         for (id, pending) in pendingAssigns {
             let status = receiverTable[id]?.status
             if status?.main == pending.assign.main && status?.backup == pending.assign.backup {
@@ -224,11 +264,14 @@ final class Engine: ObservableObject {
                 ? "Can't send: \(e). Allow Code Net under System Settings > Privacy & Security > Local Network."
                 : "Can't send: \(e)")
         }
-        let tc = last.rate == 0 || lastPluginPacketNs == 0 ? "--:--:--:--" : last.timecode
+        let tc = lastPluginPacketNs == 0 ? TimecodeAnchor()
+            : TimecodeAnchor(frames: last.frames, rate: last.rate, frameStartNs: last.frameStartNs,
+                             playing: state == .playing)
         let snapshot = (tc, last.rate, state, sent, list, problems)
         let assigning = Set(pendingAssigns.keys), assignFailed = failedAssigns
+        let calibrating = Set(pendingCalibrations.keys), calibrateFailed = failedCalibrations
         DispatchQueue.main.async {
-            self.timecode = snapshot.0
+            if self.anchor != snapshot.0 { self.anchor = snapshot.0 }
             self.rate = snapshot.1
             self.pluginState = snapshot.2
             self.framesSent = snapshot.3
@@ -236,6 +279,8 @@ final class Engine: ObservableObject {
             if self.problems != snapshot.5 { self.problems = snapshot.5 }
             if self.assigning != assigning { self.assigning = assigning }
             if self.assignFailed != assignFailed { self.assignFailed = assignFailed }
+            if self.calibrating != calibrating { self.calibrating = calibrating }
+            if self.calibrateFailed != calibrateFailed { self.calibrateFailed = calibrateFailed }
         }
     }
 }

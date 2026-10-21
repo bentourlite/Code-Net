@@ -31,19 +31,21 @@ class LtcRenderer:
         return block_start_ns + index * NS_PER_S // self.sample_rate
 
     def render(self, block_start_ns: int, count: int) -> np.ndarray:
+        # Each sample takes the frame covering the middle of its sample period, which rounds
+        # frame starts to the nearest sample without a sample being skipped or repeated.
+        half_sample_ns = NS_PER_S // (2 * self.sample_rate)
         out = np.zeros(count, dtype=np.float32)
         i = 0
         while i < count:
-            t = self._sample_time(block_start_ns, i)
+            t = self._sample_time(block_start_ns, i) + half_sample_ns
             frame = self.frames(t)
             if frame is None:
                 i += self._samples_until_next_check(count - i)
                 continue
             wave = encode_frame(frame.timecode, self.sample_rate, frame.user_bits)
-            # Sample index within the frame for time t, rounded to the nearest sample.
-            offset = round((t - frame.start_ns) * self.sample_rate / NS_PER_S)
+            offset = (t - frame.start_ns) * self.sample_rate // NS_PER_S
             if offset >= len(wave):
-                # Rounding put t just past this frame's last sample: hold its final level.
+                # t is just past this frame's last sample: hold its final level.
                 out[i] = wave[-1]
                 i += 1
                 continue

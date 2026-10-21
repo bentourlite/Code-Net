@@ -14,6 +14,7 @@ from ..net import frame_receiver_socket
 from ..protocol import source_id
 from . import settings as settings_mod
 from . import status
+from .calibrate import Calibrator
 from .core import Receiver, ReceiverConfig
 from .readback import ReadbackMonitor
 from .render import LtcRenderer
@@ -104,7 +105,8 @@ def main(argv=None) -> None:
     receiver = Receiver(config)
     sock = frame_receiver_socket(s.port, None if s.group == "none" else s.group)
     service = ReceiverService(receiver, sock, source_id(s.name))
-    readback = ReadbackMonitor(s.sample_rate) if s.readback_device else None
+    readback = (ReadbackMonitor(s.sample_rate, advance_ns=lambda: receiver.config.output_advance_ns)
+                if s.readback_device else None)
     device_name = s.device or "default"
 
     if s.output == "soundcard":
@@ -149,6 +151,22 @@ def main(argv=None) -> None:
             log.error("could not save the new main/backup to %s: %s", config_path, exc)
 
     service.on_assign = save_assignment
+
+    def set_advance(advance_ns: int) -> None:
+        with service.lock:
+            receiver.config.output_advance_ns = advance_ns
+        s.advance_ms = round(advance_ns / 1e6, 3)
+        log.warning("output advance now %.2f ms", s.advance_ms)
+        config_path = args.config or settings_mod.DEFAULT_CONFIG
+        try:
+            stored = settings_mod.load(config_path)
+            stored.advance_ms = s.advance_ms
+            settings_mod.save(stored, config_path)
+        except OSError as exc:
+            log.error("could not save the new advance to %s: %s", config_path, exc)
+
+    calibrator = Calibrator(readback, lambda: receiver.config.output_advance_ns, set_advance)
+    service.on_calibrate = calibrator.request
     status_path = _status_path(args)
     started = time.time()
     service.start()
@@ -158,6 +176,7 @@ def main(argv=None) -> None:
     try:
         while not stop.wait(1.0):
             now = time.monotonic_ns()
+            calibrator.tick(now)
             frame = service.frame_at(now)
             idle = None if frame else service.describe_idle(now)
             gaps = service.take_max_gaps()
@@ -179,6 +198,8 @@ def main(argv=None) -> None:
             snap["name"] = s.name
             snap["main"], snap["backup"] = s.main, s.backup or None
             snap["wifi_mode"] = s.wifi
+            snap["advance_ms"] = s.advance_ms
+            snap["calibration"] = calibrator.status()
             service.send_status(json.dumps(status.compact(snap), separators=(",", ":")).encode())
             if status_path is not None:
                 try:

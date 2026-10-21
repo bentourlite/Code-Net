@@ -43,6 +43,7 @@ public:
     std::atomic<uint32_t> lastFrames{0};
     std::atomic<uint8_t> lastRate{0};
     std::atomic<int64_t> lastDecodeNs{0};
+    std::atomic<int64_t> lastFrameStartNs{0};  // host clock, as sent; stored before lastFrames
     std::atomic<bool> hostTimeAvailable{false};
     std::atomic<uint32_t> framesSent{0};
     std::atomic<float> inputLevel{0.0f};  // recent peak of the louder channel, 0..1

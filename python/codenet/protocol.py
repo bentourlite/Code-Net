@@ -24,6 +24,7 @@ class MessageType(IntEnum):
     SYNC_RESPONSE = 3
     STATUS = 4  # receiver -> host, JSON summary once a second
     ASSIGN = 5  # host -> receiver, sets its main and backup hosts
+    CALIBRATE = 6  # host -> receiver, measures or sets its output delay compensation
 
 
 class FrameFlags(IntFlag):
@@ -50,6 +51,7 @@ _SYNC_REQUEST = struct.Struct(">4sBB16sIq")
 _SYNC_RESPONSE = struct.Struct(">4sBB16sIqqq")
 _STATUS_HEADER = struct.Struct(">4sBB16s")
 _ASSIGN = struct.Struct(">4sBB16s16s16sI")
+_CALIBRATE = struct.Struct(">4sBB16sBiI")
 MAX_STATUS_BYTES = 1200
 
 
@@ -132,7 +134,27 @@ class Assign:
                             self.backup or bytes(SOURCE_ID_SIZE), self.sequence & 0xFFFFFFFF)
 
 
-Message = FramePacket | SyncRequest | SyncResponse | StatusReport | Assign
+class CalibrateMode(IntEnum):
+    MEASURE = 0  # time the output from its readback loop and set the advance to match
+    SET = 1  # set the advance to `value_us`
+
+
+@dataclass(frozen=True)
+class Calibrate:
+    """Measures or sets a receiver's output advance, so every device puts out the same
+    frame at the same moment whatever its own latency."""
+
+    receiver: bytes
+    mode: CalibrateMode
+    value_us: int  # the advance for SET; ignored for MEASURE
+    sequence: int
+
+    def encode(self) -> bytes:
+        return _CALIBRATE.pack(MAGIC, VERSION, MessageType.CALIBRATE, self.receiver, self.mode, self.value_us,
+                               self.sequence & 0xFFFFFFFF)
+
+
+Message = FramePacket | SyncRequest | SyncResponse | StatusReport | Assign | Calibrate
 
 
 class ProtocolError(ValueError):
@@ -165,6 +187,9 @@ def decode(data: bytes) -> Message:
             if not main.strip(b"\0"):
                 raise ProtocolError("assignment without a main host")
             return Assign(rid, main, backup if backup.strip(b"\0") else None, seq)
+        if kind == MessageType.CALIBRATE:
+            _, _, _, rid, mode, value, seq = _CALIBRATE.unpack(data)
+            return Calibrate(rid, CalibrateMode(mode), value, seq)
     except struct.error as exc:
         raise ProtocolError(f"malformed packet: {exc}") from exc
     except ValueError as exc:

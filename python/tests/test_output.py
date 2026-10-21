@@ -120,3 +120,63 @@ def test_dac_clock_ignores_single_outliers_but_follows_sustained_jumps():
         last = clock.block_start(i * step + 5_000_000, block)
     assert abs(last - (39 * step + 5_000_000)) < 100_000
     assert starts[0] == 0
+
+
+def _loop(renderer, mon, delay_samples, t_start, seconds=1.0):
+    """Render and feed the output back into the readback monitor `delay_samples` late."""
+    audio = render_all(renderer, t_start, int(SR * seconds))
+    delayed = np.concatenate([np.zeros(delay_samples, np.float32), audio])
+    for i in range(0, len(delayed), 256):
+        mon.feed(delayed[i:i + 256], t_start + i * NS_PER_S // SR, renderer.emitted)
+
+
+def test_calibration_measures_the_loop_and_cancels_it():
+    from codenet.protocol import Calibrate, CalibrateMode
+    from codenet.receiver.calibrate import Calibrator
+
+    start = Timecode.parse("00:00:10:00", 25)
+    advance = [0]
+    mon = ReadbackMonitor(SR, advance_ns=lambda: advance[0])
+    cal = Calibrator(mon, lambda: advance[0], lambda ns: advance.__setitem__(0, ns), measure_ns=NS_PER_S // 2,
+                     min_frames=10)
+
+    def schedule(t):
+        # A continuous 25 fps timeline, started early by the current advance.
+        return continuous_schedule(start, -advance[0], 1000)(t)
+
+    cal.request(Calibrate(source_id("pi-1"), CalibrateMode.MEASURE, 0, 1), "10.0.0.2", 0)
+    assert cal.status()["state"] == "measuring"
+    _loop(LtcRenderer(schedule, SR), mon, 96, 0)  # 2 ms of unreported device delay
+    cal.tick(NS_PER_S)
+    st = cal.status()
+    assert st["state"] == "done" and abs(st["measured_ms"] - 2.0) < 0.05
+    assert abs(advance[0] - 2_000_000) < 50_000
+
+    # With the advance applied the same loop now lands on the timeline.
+    mon2 = ReadbackMonitor(SR, advance_ns=lambda: advance[0])
+    _loop(LtcRenderer(schedule, SR), mon2, 96, 0)
+    rb = mon2.status(NS_PER_S, outputting=True)
+    assert rb.state is Confirmation.CONFIRMED and abs(rb.offset_ns) < 50_000
+
+
+def test_calibration_set_and_failures():
+    from codenet.protocol import Calibrate, CalibrateMode
+    from codenet.receiver.calibrate import Calibrator
+
+    advance = [0]
+    cal = Calibrator(None, lambda: advance[0], lambda ns: advance.__setitem__(0, ns))
+    cal.request(Calibrate(source_id("pi-1"), CalibrateMode.SET, 4500, 7), "h", 0)
+    assert advance[0] == 4_500_000 and cal.status()["state"] == "done"
+    cal.request(Calibrate(source_id("pi-1"), CalibrateMode.MEASURE, 0, 8), "h", 0)
+    assert cal.status()["state"] == "failed" and "readback" in cal.status()["message"]
+    # A repeat of the same request is ignored.
+    advance[0] = 0
+    cal.request(Calibrate(source_id("pi-1"), CalibrateMode.SET, 4500, 8), "h", 0)
+    assert advance[0] == 0
+
+    mon = ReadbackMonitor(SR)
+    cal = Calibrator(mon, lambda: 0, lambda ns: None, measure_ns=100)
+    cal.request(Calibrate(source_id("pi-1"), CalibrateMode.MEASURE, 0, 1), "h", 0)
+    cal.tick(200)
+    assert cal.status()["state"] == "failed" and "heard nothing" in cal.status()["message"]
+    assert mon.on_offset is None

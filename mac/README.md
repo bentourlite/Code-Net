@@ -44,6 +44,19 @@ until the Pi confirms the change.
 The latency trim shifts every frame stamp. Leave it at 0 unless a readback measurement shows
 an offset.
 
+### Lining receivers up (output offset)
+
+Every output device adds some delay its driver doesn't report, so two receivers can put out
+the same frame a millisecond or two apart. Each receiver row has an **Output offset**: that
+receiver starts each frame this much earlier.
+
+- **Measure** (and **Measure all offsets**) works on any Pi with a readback loop: a cable from
+  its LTC output (or the MIF4's LTC out) into its soundcard input, with `readback_device` set.
+  Play timecode, press Measure, and about 3 seconds later the Pi has timed its own output and
+  saved the offset. Its readback then reads close to +0.00 ms.
+- **Set** types the offset in by hand, for a receiver without a loop (such as a Mac receiver),
+  for example from a scope comparison against a measured Pi.
+
 ## Receiving on a Mac
 
 Any Mac with Code Net can also be a receiver, doing the same job as a Pi. In the menu, turn on
@@ -54,7 +67,8 @@ choose an output:
 - **MIDI (MTC)**: MIDI timecode to a Rosendahl MIF4, which outputs it as LTC.
 
 It fails over between main and backup like a Pi, shows up in every Code Net dashboard and can
-be reassigned from any of them. A Mac can send and receive at the same time.
+be reassigned from any of them. A Mac can send and receive at the same time. Its **Output
+offset** works like a Pi's (it can be set from any dashboard, but not measured yet).
 
 ## Signed installer (no "malware" warning)
 

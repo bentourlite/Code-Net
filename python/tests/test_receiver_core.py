@@ -198,3 +198,13 @@ def test_receiver_without_a_main_waits_for_an_assignment():
     rx.on_sync(MAIN, 0, 0, 0, 0)
     feed(rx, 1, sources=(MAIN,))
     assert rx.active.role is Role.MAIN
+
+
+def test_output_advance_starts_frames_earlier_and_keeps_the_prediction_window():
+    rx = make(output_advance_ns=FRAME + FRAME // 2)  # 60 ms device delay at 25 fps
+    feed(rx, 0)
+    f = rx.frame_at(FRAME)
+    assert str(f.timecode) == "01:00:00:02" and f.start_ns == FRAME // 2
+    # Without widening, the window would end 1.5 frames early; it still runs 2 frames past
+    # the last packet in shared time.
+    assert rx.frame_at(FRAME * 3 - FRAME // 2 - 1 + FRAME) is not None

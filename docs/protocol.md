@@ -76,7 +76,13 @@ can list receivers without a separate discovery step. Fields: `name`, `following
 (`main`, `backup` or null), `output` (timecode or null), `rate`, `idle` (why output is
 stopped), `device`, `readback` (`state`, `offset_ms`), `wifi`, `uptime_s`, and
 `sources` (per host: `name`, `role`, `valid`, `playing`, `gap_ms`, `offset_ms`),
-`main` and `backup` (the assigned host names), and `heard` (other hosts it receives).
+`main` and `backup` (the assigned host names), `heard` (other hosts it receives),
+`advance_ms` (its output offset) and `calibration` (`seq`, `state` of `measuring`, `done`
+or `failed`, `message`, `measured_ms`) for the latest Calibrate request.
+
+The readback `offset_ms` is when the output was heard back minus when that frame belongs
+on the shared timeline, after the output offset; it reads zero once the receiver is
+calibrated.
 
 ## Assign (type 5, 58 bytes)
 
@@ -92,6 +98,31 @@ The receiver applies it at once (a host that stays keeps its clock sync; if the 
 is valid it is followed straight away), saves it to its settings file, and shows it in its
 next status report. The app repeats the packet every 200 ms until the report matches;
 the receiver ignores repeats of the same sequence.
+
+## Calibrate (type 6, 31 bytes)
+
+| Offset | Size | Field |
+| --- | --- | --- |
+| 6 | 16 | Receiver id (only that receiver acts on it) |
+| 22 | 1 | Mode: 0 measure, 1 set |
+| 23 | 4 | Offset in microseconds, signed (set only) |
+| 27 | 4 | Sequence |
+
+Sent by a host app to a receiver's frame port to line its output up with every other
+receiver's. Each receiver starts its frames earlier by its output offset (`advance_ms`), to
+cancel the delay its output device adds that the audio driver doesn't report.
+
+- **Set** applies the offset at once and saves it.
+- **Measure** needs the receiver's output looped back into an input (`readback_device`).
+  For 3 s it compares each frame heard back with when that frame belongs on the timeline,
+  takes the median of the middle half, adds it to the offset and saves the result. It fails
+  if fewer than 20 frames come back or the readings spread over more than 2 ms. The loop
+  includes the input's delay too, so the result is slightly generous; identical receivers
+  still land together.
+
+While the offset is positive, the prediction window grows by the frames it covers, so a
+receiver with a long delay keeps the same tolerance to late packets. The app repeats the
+packet every 200 ms until the receiver's `calibration.seq` matches.
 
 ## Plugin to host app (localhost)
 

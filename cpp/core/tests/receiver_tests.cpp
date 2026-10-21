@@ -260,6 +260,39 @@ static void testServiceHandlesPacketsAndAssignments() {
     CHECK(status.find("\"following\":\"main\"") != std::string::npos);
     CHECK(status.find("\"output\":\"01:00:00:02\"") != std::string::npos);
     CHECK(status.size() < kMaxStatusBytes);
+
+    // Calibrate: a host sets the advance; measuring is reported as unavailable.
+    double advanced = 0;
+    svc.setAdvanceCallback([&](double ms) { advanced = ms; });
+    Calibrate c;
+    c.receiver = makeSourceId("mac-rx");
+    c.mode = CalibrateMode::Set;
+    c.valueUs = -1500;
+    c.sequence = 3;
+    uint8_t cb[Calibrate::kSize];
+    encode(c, cb);
+    // The same bytes as python/codenet/protocol.py.
+    CHECK(hex(std::vector<uint8_t>(cb, cb + sizeof cb)) == "434e455401066d61632d72780000000000000000000001fffffa2400000003");
+    svc.handle(cb, sizeof cb, "10.0.0.3", 2 * FRAME);
+    CHECK(advanced == -1.5 && svc.advanceMs() == -1.5);
+    status = svc.buildStatus(2 * FRAME);
+    CHECK(status.find("\"advance_ms\":-1.5") != std::string::npos);
+    CHECK(status.find("\"calibration\":{\"seq\":3,\"state\":\"done\"") != std::string::npos);
+    c.mode = CalibrateMode::Measure;
+    c.sequence = 4;
+    encode(c, cb);
+    svc.handle(cb, sizeof cb, "10.0.0.3", 2 * FRAME);
+    CHECK(svc.buildStatus(2 * FRAME).find("\"seq\":4,\"state\":\"failed\"") != std::string::npos);
+}
+
+static void testAdvanceWidensPrediction() {
+    ReceiverConfig cfg;
+    cfg.outputAdvanceNs = FRAME + FRAME / 2;
+    auto rx = make(cfg);
+    feed(rx, 0);
+    auto f = rx.frameAt(FRAME);
+    CHECK(f && f->timecode == tcAt(2) && f->startNs == FRAME / 2);
+    CHECK(rx.frameAt(FRAME * 3 - FRAME / 2 - 1 + FRAME).has_value());
 }
 
 int main() {
@@ -275,6 +308,7 @@ int main() {
     testRendererPlacesFrames();
     testMtcMatchesPython();
     testServiceHandlesPacketsAndAssignments();
+    testAdvanceWidensPrediction();
     if (failures) {
         std::fprintf(stderr, "%d check(s) failed\n", failures);
         return 1;

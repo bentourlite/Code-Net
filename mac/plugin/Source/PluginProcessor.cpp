@@ -92,7 +92,8 @@ void CodeNetTapProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
                 pending[size_t(start1)] = p;
                 fifo.finishedWrite(1);
             }
-            lastFrames.store(f.timecode.frames, std::memory_order_relaxed);
+            lastFrameStartNs.store(p.frameStartNs);
+            lastFrames.store(f.timecode.frames);
             lastRate.store(f.timecode.rate, std::memory_order_relaxed);
             lastDecodeNs.store(nowNs(), std::memory_order_relaxed);
         });

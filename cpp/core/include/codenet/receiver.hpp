@@ -84,6 +84,7 @@ public:
     void onSync(const SourceId& source, int64_t t1, int64_t t2, int64_t t3, int64_t t4);
     void setSources(std::optional<SourceId> main, std::optional<SourceId> backup, int64_t nowNs);
     void requestReturnToMain() { returnRequested_ = true; }
+    void setOutputAdvance(int64_t ns) { config_.outputAdvanceNs = ns; }
 
     bool isValid(const SourceState& state, int64_t nowNs) const;
     void update(int64_t nowNs);

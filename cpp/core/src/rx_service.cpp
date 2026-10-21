@@ -150,6 +150,22 @@ void RxService::setDevice(const std::string& device) {
     device_ = device;
 }
 
+void RxService::setAdvance(double ms) {
+    std::lock_guard<std::mutex> g(lock_);
+    receiver_.setOutputAdvance(int64_t(ms * 1e6));
+    publishSchedule();
+}
+
+double RxService::advanceMs() const {
+    std::lock_guard<std::mutex> g(lock_);
+    return double(receiver_.config().outputAdvanceNs) / 1e6;
+}
+
+void RxService::setAdvanceCallback(AdvanceCallback cb) {
+    std::lock_guard<std::mutex> g(lock_);
+    onAdvance_ = std::move(cb);
+}
+
 void RxService::setAssignCallback(AssignCallback cb) {
     std::lock_guard<std::mutex> g(lock_);
     onAssign_ = std::move(cb);
@@ -288,6 +304,31 @@ void RxService::handle(const uint8_t* data, size_t size, const std::string& host
             cb = onAssign_;
         }
         if (cb) cb(main, backup);
+    } else if (type == uint8_t(MessageType::Calibrate)) {
+        Calibrate c;
+        if (!decode(data, size, c) || c.receiver != id_) return;
+        AdvanceCallback cb;
+        double ms = 0;
+        {
+            std::lock_guard<std::mutex> g(lock_);
+            if (lastCalibrate_ && lastCalibrate_->first == host && lastCalibrate_->second == c.sequence) return;
+            lastCalibrate_ = std::make_pair(host, c.sequence);
+            calibrateSeq_ = c.sequence;
+            if (c.mode == CalibrateMode::Measure) {
+                // Measuring needs the output looped back into an input, which this receiver
+                // does not read yet; Core Audio reports most of the device delay itself.
+                calibrateState_ = "failed";
+                calibrateMessage_ = "this receiver can't measure its output; set its offset by hand";
+                return;
+            }
+            receiver_.setOutputAdvance(int64_t(c.valueUs) * 1000);
+            publishSchedule();
+            calibrateState_ = "done";
+            calibrateMessage_ = "set by hand";
+            ms = c.valueUs / 1000.0;
+            cb = onAdvance_;
+        }
+        if (cb) cb(ms);
     }
 }
 
@@ -333,6 +374,13 @@ std::string RxService::buildStatus(int64_t nowNs) {
     j += ",\"device\":" + jsonString(device_);
     j += ",\"readback\":null";
     j += std::string(",\"wifi\":") + (config_.wifi ? "true" : "false");
+    j += ",\"advance_ms\":" + jsonNumber(double(cfg.outputAdvanceNs) / 1e6, 3);
+    if (calibrateSeq_) {
+        j += ",\"calibration\":{\"seq\":" + std::to_string(*calibrateSeq_) + ",\"state\":" +
+             jsonString(calibrateState_) + ",\"message\":" + jsonString(calibrateMessage_) + ",\"measured_ms\":null}";
+    } else {
+        j += ",\"calibration\":null";
+    }
     j += ",\"uptime_s\":" + std::to_string((nowNs - startedNs_) / kNsPerSecond);
     j += ",\"sources\":[";
     first = true;

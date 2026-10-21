@@ -8,7 +8,7 @@ enum CodeNet {
     static let multicastGroup = "239.255.60.60"
     static let version: UInt8 = 1
 
-    enum MessageType: UInt8 { case frame = 1, syncRequest = 2, syncResponse = 3, status = 4, assign = 5 }
+    enum MessageType: UInt8 { case frame = 1, syncRequest = 2, syncResponse = 3, status = 4, assign = 5, calibrate = 6 }
 
     static let flagPlaying: UInt8 = 1
     static let flagSourceLost: UInt8 = 2
@@ -41,7 +41,9 @@ struct FramePacket: Equatable {
 
     var playing: Bool { flags & CodeNet.flagPlaying != 0 }
 
-    var timecode: String {
+    var timecode: String { Self.timecode(frames: frames, rate: rate) }
+
+    static func timecode(frames: UInt32, rate: UInt8) -> String {
         let r = UInt32(max(rate, 1))
         let f = frames % r, s = frames / r
         return String(format: "%02u:%02u:%02u:%02u", s / 3600, (s / 60) % 60, s % 60, f)
@@ -186,5 +188,35 @@ extension Array where Element == UInt8 {
         var v: T = 0
         for i in 0..<MemoryLayout<T>.size { v = v << 8 | T(truncatingIfNeeded: self[offset + i]) }
         return v
+    }
+}
+
+/// The last frame heard from the plugin, so the display can count frames between packets
+/// on its own clock instead of sampling whatever packet happened to arrive last.
+struct TimecodeAnchor: Equatable {
+    var frames: UInt32 = 0
+    var rate: UInt8 = 0
+    var frameStartNs: Int64 = 0
+    var playing = false
+    var maxRunOnFrames: Int64? = nil  // default a quarter of a second
+
+    /// Frames since midnight from "HH:MM:SS:FF".
+    static func parse(_ text: String, rate: Int) -> UInt32? {
+        let parts = text.split(separator: ":").compactMap { Int($0) }
+        guard parts.count == 4, rate > 0 else { return nil }
+        return UInt32(((parts[0] * 60 + parts[1]) * 60 + parts[2]) * rate + parts[3])
+    }
+
+    /// The frame on air at `nowNs`. While playing it runs on from the anchor for at most a
+    /// short while, so a stalled source makes the display pause rather than run away.
+    func timecode(at nowNs: Int64) -> String {
+        guard rate > 0 else { return "--:--:--:--" }
+        var frames = Int64(self.frames)
+        if playing {
+            let elapsed = (nowNs - frameStartNs) * Int64(rate) / 1_000_000_000
+            frames += min(max(elapsed, 0), maxRunOnFrames ?? Int64(rate) / 4)
+        }
+        let perDay = Int64(rate) * 86_400
+        return FramePacket.timecode(frames: UInt32(((frames % perDay) + perDay) % perDay), rate: rate)
     }
 }

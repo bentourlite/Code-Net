@@ -87,6 +87,27 @@ void cn_receiver_set_assign_callback(cn_receiver* r, cn_assign_callback callback
         });
 }
 
+void cn_receiver_set_advance(cn_receiver* r, double advance_ms) { r->service->setAdvance(advance_ms); }
+
+void cn_receiver_set_advance_callback(cn_receiver* r, cn_advance_callback callback, void* context) {
+    if (callback == nullptr) {
+        r->service->setAdvanceCallback(nullptr);
+        return;
+    }
+    r->service->setAdvanceCallback([callback, context](double ms) { callback(context, ms); });
+}
+
+int cn_receiver_timecode_now(cn_receiver* r, char* buffer, int size) {
+    const auto frame = r->service->frameAt(monotonicNs());
+    const std::string s = frame ? frame->timecode.toString() : std::string();
+    if (buffer != nullptr && size > 0) {
+        const size_t n = std::min(s.size(), size_t(size - 1));
+        std::memcpy(buffer, s.data(), n);
+        buffer[n] = 0;
+    }
+    return int(s.size());
+}
+
 int cn_receiver_status(cn_receiver* r, char* buffer, int size) {
     const std::string s = r->service->statusJson();
     if (buffer != nullptr && size > 0) {

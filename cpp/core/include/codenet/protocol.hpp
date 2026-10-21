@@ -16,7 +16,7 @@ constexpr uint16_t kPluginPort = 5262;
 constexpr const char* kMulticastGroup = "239.255.60.60";
 constexpr uint8_t kVersion = 1;
 
-enum class MessageType : uint8_t { Frame = 1, SyncRequest = 2, SyncResponse = 3, Status = 4, Assign = 5 };
+enum class MessageType : uint8_t { Frame = 1, SyncRequest = 2, SyncResponse = 3, Status = 4, Assign = 5, Calibrate = 6 };
 
 enum FrameFlags : uint8_t { kFlagNone = 0, kFlagPlaying = 1, kFlagSourceLost = 2 };
 
@@ -114,6 +114,17 @@ struct Assign {
     uint32_t sequence = 0;
 };
 
+// Measures or sets a receiver's output advance (its device delay compensation).
+enum class CalibrateMode : uint8_t { Measure = 0, Set = 1 };
+
+struct Calibrate {
+    static constexpr size_t kSize = 31;
+    SourceId receiver{};
+    CalibrateMode mode = CalibrateMode::Measure;
+    int32_t valueUs = 0;  // the advance for Set
+    uint32_t sequence = 0;
+};
+
 inline void putHeader(uint8_t* out, MessageType type) {
     std::memcpy(out, "CNET", 4);
     out[4] = kVersion;
@@ -152,6 +163,24 @@ inline bool decode(const uint8_t* data, size_t size, Assign& a) {
     std::memcpy(a.backup.data(), data + 38, 16);
     a.sequence = wire::get32(data + 54);
     return !isEmpty(a.main);
+}
+
+inline void encode(const Calibrate& c, uint8_t (&out)[Calibrate::kSize]) {
+    putHeader(out, MessageType::Calibrate);
+    std::memcpy(out + 6, c.receiver.data(), 16);
+    out[22] = uint8_t(c.mode);
+    wire::put32(out + 23, uint32_t(c.valueUs));
+    wire::put32(out + 27, c.sequence);
+}
+
+inline bool decode(const uint8_t* data, size_t size, Calibrate& c) {
+    if (size != Calibrate::kSize || messageType(data, size) != uint8_t(MessageType::Calibrate)) return false;
+    if (data[22] > uint8_t(CalibrateMode::Set)) return false;
+    std::memcpy(c.receiver.data(), data + 6, 16);
+    c.mode = CalibrateMode(data[22]);
+    c.valueUs = int32_t(wire::get32(data + 23));
+    c.sequence = wire::get32(data + 27);
+    return true;
 }
 
 // Status report header; the JSON payload follows.
