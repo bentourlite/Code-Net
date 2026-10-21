@@ -95,7 +95,7 @@ struct DashboardView: View {
                 Text("Host name").frame(width: 110, alignment: .leading)
                 TextField("mac-a", text: Binding(
                     get: { engine.settings.hostName },
-                    set: { engine.settings.hostName = String($0.utf8.prefix(16)).isEmpty ? $0 : String(decoding: Array($0.utf8.prefix(16)), as: UTF8.self) }))
+                    set: { engine.settings.hostName = Self.fitSourceId($0) }))
                     .textFieldStyle(.roundedBorder)
             }
             Toggle("Send by multicast (\(CodeNet.multicastGroup))", isOn: Binding(
@@ -109,6 +109,16 @@ struct DashboardView: View {
             Text("Receivers name this host as their main or backup using the host name above.")
                 .font(.caption).foregroundStyle(.secondary)
         }
+    }
+
+    /// Cuts a name to whole characters that fit the 16-byte source id.
+    static func fitSourceId(_ name: String) -> String {
+        var out = ""
+        for c in name {
+            if out.utf8.count + String(c).utf8.count > 16 { break }
+            out.append(c)
+        }
+        return out
     }
 
     private func applyTargets() {
