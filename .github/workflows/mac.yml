@@ -15,7 +15,7 @@ jobs:
   mac:
     runs-on: macos-14
     env:
-      HAS_DEVELOPER_ID: ${{ secrets.MAC_CERTS_P12 != '' }}
+      HAS_DEVELOPER_ID: ${{ secrets.MAC_CERTS_P12 != '' && secrets.MAC_CERTS_PASSWORD != '' }}
     steps:
       - uses: actions/checkout@v4
       - name: Core tests
