@@ -41,6 +41,19 @@ Pi to follow it and saves it on the Pi, so a Pi only needs its name, output and 
 locally. A new Pi with no main set shows up as soon as it hears any Code Net Mac; a spinner shows
 until the Pi confirms the change.
 
+### REAPER
+
+The same plugin works in REAPER (AU or VST3; rescan with Options > Preferences > Plug-ins >
+Re-scan if it's missing). Put **Code Net Tap** on the track with the LTC item, and:
+
+- **Prevent anticipative FX** on that track: right-click the track, then Performance options >
+  Prevent anticipative FX. REAPER otherwise processes FX on tracks that aren't record-armed up
+  to a few hundred milliseconds ahead of playback, so the timecode would go out early. The
+  plugin warns in orange when it sees this happening.
+- Keep the LTC item at playback rate 1.0 with no stretch markers, and don't let a project
+  sample-rate change resample it.
+- Route the track to an unused output, or use the plugin's mute switch.
+
 The latency trim shifts every frame stamp. Leave it at 0 unless a readback measurement shows
 an offset.
 

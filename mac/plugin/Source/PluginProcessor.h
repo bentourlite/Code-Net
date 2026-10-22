@@ -11,6 +11,8 @@
 #include "codenet/ltc.hpp"
 #include "codenet/protocol.hpp"
 
+#include "AheadDetector.h"
+
 class CodeNetTapProcessor : public juce::AudioProcessor, private juce::Thread {
 public:
     CodeNetTapProcessor();
@@ -48,6 +50,8 @@ public:
     std::atomic<uint32_t> framesSent{0};
     std::atomic<float> inputLevel{0.0f};  // recent peak of the louder channel, 0..1
     std::atomic<int> ltcChannel{-1};      // channel the LTC was last read from
+    std::atomic<bool> processingAhead{false};  // see AheadDetector
+    std::atomic<int64_t> aheadNs{0};
 
     static int64_t nowNs();  // the Mac host clock (mach_absolute_time) in ns
 
@@ -57,6 +61,7 @@ private:
 
     // One decoder per input channel, so LTC on either side of a stereo clip is read.
     std::array<std::unique_ptr<codenet::LtcDecoder>, 2> decoders;
+    AheadDetector aheadDetector;
     int activeChannel = -1;
     int64_t activeLastFrameEnd = 0;  // sample position where the active channel's last frame ended
     double currentSampleRate = 48000.0;

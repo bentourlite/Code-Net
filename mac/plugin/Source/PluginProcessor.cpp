@@ -66,6 +66,9 @@ void CodeNetTapProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::M
                 fromHost = true;
             }
     hostTimeAvailable.store(fromHost, std::memory_order_relaxed);
+    aheadDetector.update(nowNs(), blockNs, n, currentSampleRate);
+    processingAhead.store(aheadDetector.ahead(), std::memory_order_relaxed);
+    aheadNs.store(aheadDetector.leadNs(), std::memory_order_relaxed);
     const int64_t blockStartSample = decoders[0]->position();
     const int64_t trimNs = int64_t(double(latencyTrimMs->load()) * 1.0e6);
     const double sr = currentSampleRate;
