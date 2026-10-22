@@ -1,11 +1,20 @@
 #include "codenet/rx_service.hpp"
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#else
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <cerrno>
@@ -20,6 +29,17 @@ namespace codenet {
 int64_t monotonicNs() {
 #if defined(__APPLE__)
     return int64_t(clock_gettime_nsec_np(CLOCK_UPTIME_RAW));
+#elif defined(_WIN32)
+    // QueryPerformanceCounter: the clock WASAPI reports device positions against.
+    static const int64_t frequency = [] {
+        LARGE_INTEGER f;
+        QueryPerformanceFrequency(&f);
+        return int64_t(f.QuadPart);
+    }();
+    LARGE_INTEGER c;
+    QueryPerformanceCounter(&c);
+    const int64_t ticks = int64_t(c.QuadPart);
+    return ticks / frequency * kNsPerSecond + ticks % frequency * kNsPerSecond / frequency;
 #else
     timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -58,6 +78,30 @@ std::string jsonNumber(double v, int decimals) {
 
 SourceId idFromName(const std::string& name) { return makeSourceId(name.c_str()); }
 
+#if defined(_WIN32)
+using socklen_t = int;
+void closeSocket(int fd) { closesocket(SOCKET(fd)); }
+std::string socketError() {
+    char buf[256] = {};
+    FormatMessageA(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS, nullptr, DWORD(WSAGetLastError()), 0, buf,
+                   sizeof buf, nullptr);
+    std::string s = buf;
+    while (!s.empty() && (s.back() == '\n' || s.back() == '\r' || s.back() == '.')) s.pop_back();
+    return s;
+}
+bool waitReadable(int fd, int timeoutMs) {
+    WSAPOLLFD p{SOCKET(fd), POLLRDNORM, 0};
+    return WSAPoll(&p, 1, timeoutMs) > 0 && (p.revents & POLLRDNORM);
+}
+#else
+void closeSocket(int fd) { close(fd); }
+std::string socketError() { return std::strerror(errno); }
+bool waitReadable(int fd, int timeoutMs) {
+    pollfd p{fd, POLLIN, 0};
+    return poll(&p, 1, timeoutMs) > 0 && (p.revents & POLLIN);
+}
+#endif
+
 }  // namespace
 
 RxService::RxService(RxServiceConfig config, ReceiverConfig receiverConfig)
@@ -69,10 +113,17 @@ RxService::RxService(RxServiceConfig config, ReceiverConfig receiverConfig)
 RxService::~RxService() { stop(); }
 
 std::optional<std::string> RxService::start() {
+#if defined(_WIN32)
+    WSADATA wsa;
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return std::string("can't start Windows networking");
+    const SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    fd_ = s == INVALID_SOCKET ? -1 : int(s);
+#else
     fd_ = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (fd_ < 0) return std::string("socket: ") + std::strerror(errno);
+#endif
+    if (fd_ < 0) return std::string("socket: ") + socketError();
     int yes = 1;
-    setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof yes);
+    setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&yes), sizeof yes);
 #ifdef SO_REUSEPORT
     setsockopt(fd_, SOL_SOCKET, SO_REUSEPORT, &yes, sizeof yes);
 #endif
@@ -82,24 +133,24 @@ std::optional<std::string> RxService::start() {
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     if (bind(fd_, reinterpret_cast<sockaddr*>(&addr), sizeof addr) != 0) {
         std::string err = std::string("can't listen on port ") + std::to_string(config_.port) + ": " +
-                          std::strerror(errno);
-        close(fd_);
+                          socketError();
+        closeSocket(fd_);
         fd_ = -1;
         return err;
     }
     if (config_.group != "none" && !config_.group.empty()) {
         ip_mreq mreq{};
-        mreq.imr_multiaddr.s_addr = inet_addr(config_.group.c_str());
+        inet_pton(AF_INET, config_.group.c_str(), &mreq.imr_multiaddr);
         mreq.imr_interface.s_addr = htonl(INADDR_ANY);
-        if (setsockopt(fd_, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof mreq) != 0) {
-            std::string err = std::string("can't join multicast group ") + config_.group + ": " + std::strerror(errno);
-            close(fd_);
+        if (setsockopt(fd_, IPPROTO_IP, IP_ADD_MEMBERSHIP, reinterpret_cast<const char*>(&mreq), sizeof mreq) != 0) {
+            std::string err = std::string("can't join multicast group ") + config_.group + ": " + socketError();
+            closeSocket(fd_);
             fd_ = -1;
             return err;
         }
     }
     int tos = 0xB8;  // DSCP EF: low delay
-    setsockopt(fd_, IPPROTO_IP, IP_TOS, &tos, sizeof tos);
+    setsockopt(fd_, IPPROTO_IP, IP_TOS, reinterpret_cast<const char*>(&tos), sizeof tos);
     stop_ = false;
     thread_ = std::thread([this] { run(); });
     return std::nullopt;
@@ -108,7 +159,12 @@ std::optional<std::string> RxService::start() {
 void RxService::stop() {
     stop_ = true;
     if (thread_.joinable()) thread_.join();
-    if (fd_ >= 0) close(fd_);
+    if (fd_ >= 0) {
+        closeSocket(fd_);
+#if defined(_WIN32)
+        WSACleanup();
+#endif
+    }
     fd_ = -1;
 }
 
@@ -181,19 +237,19 @@ void RxService::sendTo(const uint8_t* data, size_t size, const std::string& host
     sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = inet_addr(host.c_str());
-    sendto(fd_, data, size, 0, reinterpret_cast<sockaddr*>(&addr), sizeof addr);
+    if (inet_pton(AF_INET, host.c_str(), &addr.sin_addr) != 1) return;
+    sendto(fd_, reinterpret_cast<const char*>(data), int(size), 0, reinterpret_cast<sockaddr*>(&addr), sizeof addr);
 }
 
 void RxService::run() {
     std::vector<uint8_t> buf(2048);
     int64_t nextSync = 0, nextStatus = monotonicNs() + kStatusIntervalNs;
     while (!stop_) {
-        pollfd p{fd_, POLLIN, 0};
-        if (poll(&p, 1, 1) > 0 && (p.revents & POLLIN)) {
+        if (waitReadable(fd_, 1)) {
             sockaddr_in from{};
             socklen_t len = sizeof from;
-            const ssize_t n = recvfrom(fd_, buf.data(), buf.size(), 0, reinterpret_cast<sockaddr*>(&from), &len);
+            const auto n = recvfrom(fd_, reinterpret_cast<char*>(buf.data()), int(buf.size()), 0,
+                                    reinterpret_cast<sockaddr*>(&from), &len);
             if (n > 0) {
                 char host[INET_ADDRSTRLEN] = {};
                 inet_ntop(AF_INET, &from.sin_addr, host, sizeof host);

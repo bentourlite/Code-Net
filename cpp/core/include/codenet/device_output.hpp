@@ -1,5 +1,6 @@
-// Device outputs for the Mac receiver: LTC through Core Audio, MTC through Core MIDI.
-// Implemented in src/mac_io.cpp; on other systems open() reports that they are unsupported.
+// Device outputs for the desktop receivers: LTC through Core Audio or WASAPI, MTC through
+// Core MIDI or WinMM. Implemented in src/mac_io.cpp and src/win_io.cpp; elsewhere opening
+// one reports that it is unsupported.
 #pragma once
 
 #include <memory>

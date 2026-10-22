@@ -1,0 +1,29 @@
+name: windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Core tests
+        run: |
+          cmake -S cpp/core -B build-core && cmake --build build-core --config Release --parallel && ctest --test-dir build-core -C Release --output-on-failure
+      - name: Build Code Net Receiver
+        run: |
+          cmake -S windows -B build && cmake --build build --config Release --parallel
+      - name: Package
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem build -Recurse -Filter "Code Net Receiver.exe" | Select-Object -First 1
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item $exe.FullName "dist/Code Net Receiver.exe"
+          Copy-Item windows/README.md dist/README.md
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Code Net Receiver for Windows
+          path: dist
