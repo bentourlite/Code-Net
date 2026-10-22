@@ -12,7 +12,7 @@ CodeNetTapEditor::CodeNetTapEditor(CodeNetTapProcessor& p)
     addAndMakeVisible(trim);
     addAndMakeVisible(trimLabel);
     addAndMakeVisible(mute);
-    setSize(420, 220);
+    setSize(420, 250);
     startTimerHz(60);
 }
 
@@ -63,13 +63,25 @@ void CodeNetTapEditor::paint(juce::Graphics& g) {
         line = "No audio on this track. Press play?";
     } else {
         g.setColour(juce::Colours::orange);
-        line = "Audio at " + dB + ", but no LTC found. Is Warp off?";
+        line = "Audio at " + dB + ", but no LTC found. " +
+               (juce::PluginHostType().isReaper() ? "Is the item's playback rate 1.0?" : "Is Warp off?");
     }
     g.drawText(line, 16, 84, 400, 18, juce::Justification::left);
     g.setColour(juce::Colours::lightgrey);
     g.drawText(juce::String("Frames sent to the Code Net app: ") + juce::String(processor.framesSent.load()), 16,
                104, 400, 18, juce::Justification::left);
-    if (!processor.hostTimeAvailable.load()) {
+    if (processor.processingAhead.load()) {
+        // REAPER's anticipative FX: the frames would leave early by the render-ahead.
+        g.setColour(juce::Colours::orange);
+        const juce::String host = juce::PluginHostType().isReaper() ? "REAPER" : "The host";
+        g.drawText(host + " runs this track " + juce::String(processor.aheadNs.load() / 1000000) +
+                       " ms ahead, so timecode goes out early.",
+                   16, 126, 400, 16, juce::Justification::left);
+        g.drawText(juce::PluginHostType().isReaper()
+                       ? "Right-click the track: Performance options > Prevent anticipative FX."
+                       : "Turn off any render-ahead or anticipative processing for this track.",
+                   16, 142, 400, 16, juce::Justification::left);
+    } else if (!processor.hostTimeAvailable.load()) {
         g.setColour(juce::Colours::orange);
         g.drawText("Host gives no timestamps; timing uses the clock instead", 16, 124, 400, 18,
                    juce::Justification::left);
@@ -77,7 +89,7 @@ void CodeNetTapEditor::paint(juce::Graphics& g) {
 }
 
 void CodeNetTapEditor::resized() {
-    trimLabel.setBounds(16, 150, 130, 22);
-    trim.setBounds(150, 150, 254, 22);
-    mute.setBounds(12, 182, 380, 24);
+    trimLabel.setBounds(16, 180, 130, 22);
+    trim.setBounds(150, 180, 254, 22);
+    mute.setBounds(12, 212, 380, 24);
 }
