@@ -4,6 +4,9 @@
 #include "MainComponent.h"
 
 #if JUCE_WINDOWS
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <timeapi.h>
 #endif

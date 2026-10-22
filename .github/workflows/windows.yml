@@ -12,13 +12,10 @@ jobs:
       - uses: actions/checkout@v4
       - name: Core tests
         run: |
-          cmake -S cpp/core -B build-core
-          cmake --build build-core --config Release --parallel
-          ctest --test-dir build-core -C Release --output-on-failure
+          cmake -S cpp/core -B build-core && cmake --build build-core --config Release --parallel && ctest --test-dir build-core -C Release --output-on-failure
       - name: Build Code Net Receiver
         run: |
-          cmake -S windows -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --config Release --parallel
+          cmake -S windows -B build && cmake --build build --config Release --parallel
       - name: Package
         shell: pwsh
         run: |
