@@ -55,3 +55,12 @@ def test_assign_round_trip():
     b = Assign(source_id("pi-1"), source_id("mac-a"), source_id("mac-b"), 10)
     assert decode(b.encode()) == b
     assert len(b.encode()) == 58
+
+
+def test_calibrate_round_trip():
+    from codenet.protocol import Calibrate, CalibrateMode
+
+    c = Calibrate(source_id("pi-1"), CalibrateMode.SET, -1500, 3)
+    assert decode(c.encode()) == c
+    assert len(c.encode()) == 31
+    assert c.encode().hex() == "434e45540106" + "70692d31" + "00" * 12 + "01" + "fffffa24" + "00000003"

@@ -8,7 +8,7 @@ import socket
 import threading
 import time
 
-from ..protocol import (SYNC_PORT, Assign, FramePacket, ProtocolError, StatusReport, SyncRequest, SyncResponse, decode,
+from ..protocol import (SYNC_PORT, Assign, Calibrate, FramePacket, ProtocolError, StatusReport, SyncRequest, SyncResponse, decode,
                         source_name)
 from .core import Receiver
 
@@ -35,6 +35,8 @@ class ReceiverService:
         self._last_assign: tuple[str, int] | None = None
         # Called (outside the lock) with (main, backup) names after a host app reassigns this receiver.
         self.on_assign = None
+        # Called (outside the lock) with (Calibrate, host, now_ns) for requests addressed to us.
+        self.on_calibrate = None
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -129,6 +131,8 @@ class ReceiverService:
                 self.receiver.on_sync(msg.host, msg.t1, msg.t2, msg.t3, t4)
         if isinstance(msg, Assign) and msg.receiver == self.receiver_id:
             self._assign(msg, host, t4)
+        if isinstance(msg, Calibrate) and msg.receiver == self.receiver_id and self.on_calibrate is not None:
+            self.on_calibrate(msg, host, t4)
 
     def _assign(self, msg: Assign, host: str, now_ns: int) -> None:
         if self._last_assign == (host, msg.sequence):

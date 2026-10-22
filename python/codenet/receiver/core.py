@@ -73,6 +73,12 @@ class ReceiverConfig:
     nominal_rate: int = 25  # used for timeouts before any packet has arrived
 
 
+def advance_frames(advance_ns: int, rate: int) -> int:
+    """Whole frames the output advance reaches ahead. The prediction window is widened by
+    this much so a device with a long delay keeps the same tolerance to late packets."""
+    return -(-max(advance_ns, 0) * rate // NS_PER_S)
+
+
 class Receiver:
     def __init__(self, config: ReceiverConfig):
         self.config = config
@@ -189,7 +195,7 @@ class Receiver:
         if elapsed < 0:
             return None
         k = elapsed * rate // NS_PER_S
-        if k > self.config.max_predict_frames:
+        if k > self.config.max_predict_frames + advance_frames(self.config.output_advance_ns, rate):
             return None
         user_bits = state.last_packet.user_bits if state.last_packet else 0
         return ScheduledFrame(state.anchor.next(k), user_bits, start + frame_offset_ns(k, rate))

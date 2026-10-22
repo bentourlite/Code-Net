@@ -1,0 +1,4 @@
+module CodeNetCore {
+    header "codenet/codenet_c.h"
+    export *
+}

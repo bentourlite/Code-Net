@@ -1,5 +1,7 @@
 #include "PluginEditor.h"
 
+#include <algorithm>
+
 CodeNetTapEditor::CodeNetTapEditor(CodeNetTapProcessor& p)
     : AudioProcessorEditor(p),
       processor(p),
@@ -11,7 +13,7 @@ CodeNetTapEditor::CodeNetTapEditor(CodeNetTapProcessor& p)
     addAndMakeVisible(trimLabel);
     addAndMakeVisible(mute);
     setSize(420, 220);
-    startTimerHz(15);
+    startTimerHz(60);
 }
 
 void CodeNetTapEditor::paint(juce::Graphics& g) {
@@ -28,10 +30,25 @@ void CodeNetTapEditor::paint(juce::Graphics& g) {
     g.drawText("v" CODENET_VERSION, getWidth() - 116, 10, 100, 20, juce::Justification::right);
 
     juce::String tc = "--:--:--:--";
-    if (rate != 0) tc = codenet::Timecode{processor.lastFrames.load(), rate}.toString();
+    if (rate != 0) {
+        // Count on from the last decoded frame by the clock, rather than showing whichever
+        // frame the last redraw happened to catch.
+        uint32_t frames;
+        int64_t startNs;
+        do {
+            frames = processor.lastFrames.load();
+            startNs = processor.lastFrameStartNs.load();
+        } while (frames != processor.lastFrames.load());
+        uint32_t ahead = 0;
+        if (live) {
+            const int64_t elapsed = (CodeNetTapProcessor::nowNs() - startNs) * rate / 1'000'000'000;
+            ahead = uint32_t(std::clamp<int64_t>(elapsed, 0, rate / 4));
+        }
+        tc = codenet::Timecode{frames, rate}.next(ahead).toString();
+    }
     g.setColour(live ? juce::Colour(0xff4cd964) : juce::Colours::grey);
     g.setFont(juce::FontOptions(40.0f));
-    g.drawText(tc, 16, 34, 300, 48, juce::Justification::left);
+    g.drawText(tc, timecodeArea, juce::Justification::left);
 
     g.setFont(juce::FontOptions(13.0f));
     g.setColour(juce::Colours::lightgrey);

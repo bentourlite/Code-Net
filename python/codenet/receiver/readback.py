@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Iterable
+from typing import Callable, Iterable
 
 import numpy as np
 
@@ -23,15 +23,21 @@ class Confirmation(Enum):
 class ReadbackStatus:
     state: Confirmation
     last_timecode: str | None = None
-    offset_ns: int | None = None  # decoded start minus scheduled start
+    # When the frame was heard back minus when it belongs on the shared timeline. The output
+    # advance is taken off the schedule first, so this reads zero once the delay is calibrated.
+    offset_ns: int | None = None
 
 
 class ReadbackMonitor:
     """Feeds input audio (from a loop of the MIF4's or soundcard's LTC output) to a
     decoder and matches each decoded frame against what the renderer emitted."""
 
-    def __init__(self, sample_rate: int, tolerance_ns: int = 2_000_000, missing_after_ns: int = 500_000_000):
+    def __init__(self, sample_rate: int, tolerance_ns: int = 2_000_000, missing_after_ns: int = 500_000_000,
+                 advance_ns: Callable[[], int] = lambda: 0):
         self.sample_rate = sample_rate
+        self.advance_ns = advance_ns
+        # Called from the audio input thread with each matched frame's offset (for calibration).
+        self.on_offset: Callable[[int], None] | None = None
         self.tolerance_ns = tolerance_ns
         self.missing_after_ns = missing_after_ns
         self.decoder = LtcDecoder(sample_rate)
@@ -49,7 +55,9 @@ class ReadbackMonitor:
             if sched is None:
                 self._last = ReadbackStatus(Confirmation.DRIFT, str(frame.timecode))
                 continue
-            offset = start_ns - sched.start_ns
+            offset = start_ns - (sched.start_ns + self.advance_ns())
+            if self.on_offset is not None:
+                self.on_offset(offset)
             state = Confirmation.CONFIRMED if abs(offset) <= self.tolerance_ns else Confirmation.DRIFT
             self._last = ReadbackStatus(state, str(frame.timecode), offset)
             self._last_match_ns = start_ns

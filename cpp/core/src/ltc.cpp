@@ -36,18 +36,24 @@ std::array<uint8_t, kBitsPerFrame> ltcFrameBits(const Timecode& tc, uint32_t use
     return bits;
 }
 
-std::vector<float> ltcEncodeFrame(const Timecode& tc, int sampleRate, uint32_t userBits) {
+int ltcEncodeFrameInto(const Timecode& tc, int sampleRate, uint32_t userBits, float* out, int capacity) {
     const auto bits = ltcFrameBits(tc, userBits);
     const double spf = double(sampleRate) / tc.rate;
-    std::vector<float> out(size_t(std::lround(spf)));
-    auto edge = [&](int half) { return size_t(std::lround(half * spf / (2 * kBitsPerFrame))); };
+    const int length = int(std::lround(spf));
+    auto edge = [&](int half) { return int(std::lround(half * spf / (2 * kBitsPerFrame))); };
     float level = -1.0f;
     for (int i = 0; i < kBitsPerFrame; ++i) {
         level = -level;
-        for (size_t k = edge(2 * i); k < edge(2 * i + 1); ++k) out[k] = level;
+        for (int k = edge(2 * i); k < edge(2 * i + 1) && k < capacity; ++k) out[k] = level;
         if (bits[size_t(i)]) level = -level;
-        for (size_t k = edge(2 * i + 1); k < edge(2 * i + 2); ++k) out[k] = level;
+        for (int k = edge(2 * i + 1); k < edge(2 * i + 2) && k < capacity; ++k) out[k] = level;
     }
+    return length;
+}
+
+std::vector<float> ltcEncodeFrame(const Timecode& tc, int sampleRate, uint32_t userBits) {
+    std::vector<float> out(size_t(std::lround(double(sampleRate) / tc.rate)));
+    ltcEncodeFrameInto(tc, sampleRate, userBits, out.data(), int(out.size()));
     return out;
 }
 

@@ -14,7 +14,14 @@ public:
     void resized() override;
 
 private:
-    void timerCallback() override { repaint(); }
+    // The timecode redraws every tick so it counts each frame; the rest four times a second.
+    void timerCallback() override {
+        if (++ticks % 15 == 0) repaint();
+        else repaint(timecodeArea);
+    }
+
+    juce::Rectangle<int> timecodeArea{16, 34, 300, 48};
+    int ticks = 0;
 
     CodeNetTapProcessor& processor;
     juce::Slider trim;
