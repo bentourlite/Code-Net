@@ -27,8 +27,9 @@ MainComponent::MainComponent() {
     loadSettings();
 
     // Host apps can reassign this receiver or set its offset; both arrive on the network thread.
-    engine.onAssigned = [this](const std::string& m, const std::string& b) {
-        juce::MessageManager::callAsync([safe = juce::Component::SafePointer<MainComponent>(this), m, b] {
+    const juce::Component::SafePointer<MainComponent> self(this);
+    engine.onAssigned = [self](const std::string& m, const std::string& b) {
+        juce::MessageManager::callAsync([safe = self, m, b] {
             if (safe == nullptr) return;
             safe->engine.noteAssigned(m, b);
             safe->settings.main = m;
@@ -37,8 +38,8 @@ MainComponent::MainComponent() {
             safe->refreshHostChoices();
         });
     };
-    engine.onAdvanceSet = [this](double ms) {
-        juce::MessageManager::callAsync([safe = juce::Component::SafePointer<MainComponent>(this), ms] {
+    engine.onAdvanceSet = [self](double ms) {
+        juce::MessageManager::callAsync([safe = self, ms] {
             if (safe == nullptr) return;
             safe->settings.advanceMs = ms;
             safe->offset.setText(juce::String(ms, 2), juce::dontSendNotification);
