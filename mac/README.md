@@ -74,19 +74,36 @@ offset** works like a Pi's (it can be set from any dashboard, but not measured y
 
 macOS warns about any app that isn't signed with an Apple Developer ID and notarised. Once these
 GitHub secrets are set (repo Settings > Secrets and variables > Actions), every build also produces
-`Code Net <version>.pkg`, which installs the app and plugin with a double-click and no warning:
+`Code Net <version>.pkg`, which installs the app and plugin with a double-click and no warning.
+
+Make the certificates and secrets like this:
+
+1. In Xcode > Settings > Accounts, add your Apple ID, select the team, click Manage
+   Certificates, and add a **Developer ID Application** and a **Developer ID Installer**
+   certificate with **+** (only the team's Account Holder can).
+2. Check they are in your keychain: `security find-identity -v | grep "Developer ID"` should
+   print both.
+3. Export them and copy the result (pick your own password; allow access to each key if asked):
+
+   ```
+   security export -k login.keychain-db -t identities -f pkcs12 -P "choose-a-password" -o ~/Desktop/certs.p12
+   base64 -i ~/Desktop/certs.p12 | pbcopy
+   ```
+
+4. Create an app-specific password at account.apple.com > Sign-In and Security, and find the
+   10-character Team ID at developer.apple.com > Account > Membership details.
+5. Add these repository secrets, then delete `certs.p12`:
 
 | Secret | What it is |
 | --- | --- |
-| `MAC_CERTS_P12` | Your *Developer ID Application* and *Developer ID Installer* certificates exported together from Keychain Access as one .p12, then `base64 -i certs.p12 \| pbcopy` |
-| `MAC_CERTS_PASSWORD` | The password you set when exporting the .p12 |
+| `MAC_CERTS_P12` | The clipboard from step 3 |
+| `MAC_CERTS_PASSWORD` | The password you chose in step 3 |
 | `APPLE_ID` | The Apple ID email of the developer account |
-| `APPLE_TEAM_ID` | The 10-character Team ID (developer.apple.com > Membership) |
-| `APPLE_APP_PASSWORD` | An app-specific password from account.apple.com > Sign-In and Security |
+| `APPLE_TEAM_ID` | The Team ID from step 4 |
+| `APPLE_APP_PASSWORD` | The app-specific password from step 4 |
 
-Create the two certificates in Xcode > Settings > Accounts > Manage Certificates (+), or at
-developer.apple.com > Certificates. Locally, `mac/build.sh` does the same when
-`CODENET_SIGN_APP`, `CODENET_SIGN_INSTALLER` and `CODENET_NOTARY_PROFILE` are set.
+Locally, `mac/build.sh` does the same when `CODENET_SIGN_APP`, `CODENET_SIGN_INSTALLER` and
+`CODENET_NOTARY_PROFILE` are set.
 
 Until then, open the app the first time with right-click > Open, and allow the plugin under
 System Settings > Privacy & Security > Open Anyway.
